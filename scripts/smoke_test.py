@@ -82,6 +82,40 @@ info = run(env, B.make_random(np.random.default_rng(0)), 5)
 check("motor babbling runs from lying down", True,
       f"upright {info['upright']:.2f}, damage {info['damage']:.2f} N s, used {info['energy_used_wh'] * 1000:.1f} mWh")
 
+# --- real-floor checks -------------------------------------------------------
+env = HomebodyEnv(EnvConfig(terrain_level=1.0))
+mus, rms, tilts, kinds = [], [], [], set()
+for seed in range(12):
+    _, info0 = env.reset(seed=seed)
+    ts = info0["terrain"]
+    rms.append(ts.bump_rms_mm)
+    tilts.append(ts.tilt_deg)
+    kinds.add(ts.floor)
+    run_env = env
+    o = env._obs()
+    for _ in range(25):
+        o, *_ = env.step(B.make_hold()(o))
+    g = env.data.contact.geom
+    for i, (a, b) in enumerate(g):
+        if {a, b} & set(env.sole.values()) and env.terrain.floor_geom in (a, b):
+            mus.append(env.data.contact.friction[i][0])
+            break
+check("floor friction is what the soles feel", len(mus) > 0 and max(mus) - min(mus) > 0.2,
+      f"sole-floor mu over {len(mus)} homes: {min(mus):.2f}..{max(mus):.2f}; floors seen {sorted(kinds)}")
+check("level-1 floor is uneven like a house", 1.0 < np.mean(rms) < 6.0,
+      f"bumps {np.mean(rms):.1f} mm RMS, tilt up to {max(tilts):.2f} deg")
+
+env = HomebodyEnv(EnvConfig(terrain_level=0.0))
+_, info0 = env.reset(seed=0)
+check("level-0 floor is flat", info0["terrain"].bump_rms_mm < 1e-6, f"RMS {info0['terrain'].bump_rms_mm:.3f} mm, {info0['terrain'].floor}")
+
+env = fresh(start="lying")
+env.data.qpos[2] += 0.8          # dropped from about 90 cm
+mujoco.mj_forward(env.model, env.data)
+env.obs0 = env._obs()
+info = run(env, B.limp, 2)
+check("a drop from 90 cm does damage", info["damage"] > 0, f"damage {info['damage']:.1f} N s (limit {env.cfg.damage_limit})")
+
 env = fresh()
 t = time.time()
 o = env.obs0

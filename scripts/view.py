@@ -20,12 +20,15 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--brain", default="hold", choices=["hold", "babble", "limp"])
 ap.add_argument("--start", default="standing", choices=["standing", "lying", "random"])
 ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--terrain", type=float, default=1.0, help="0 lab floor, 1 ordinary home, 2 harder")
 a = ap.parse_args()
 
-env = HomebodyEnv(EnvConfig(start=a.start))
+env = HomebodyEnv(EnvConfig(start=a.start, terrain_level=a.terrain))
 obs, info = env.reset(seed=a.seed)
 brain = {"hold": B.make_hold(), "babble": B.make_random(), "limp": B.limp}[a.brain]
+print("terrain:", info["terrain"])
 with mujoco.viewer.launch_passive(env.model, env.data) as v:
+    v.update_hfield(env.terrain.hf)
     while v.is_running():
         t = time.time()
         obs, r, term, trunc, info = env.step(brain(obs))
@@ -33,4 +36,6 @@ with mujoco.viewer.launch_passive(env.model, env.data) as v:
         if term or trunc:
             print("died" if term else "time up", {k: info[k] for k in ("t", "soc", "damage")})
             obs, info = env.reset()
+            v.update_hfield(env.terrain.hf)
+            print("terrain:", info["terrain"])
         time.sleep(max(0.0, env.dt - (time.time() - t)))

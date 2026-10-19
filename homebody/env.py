@@ -23,6 +23,7 @@ import numpy as np
 
 from . import power as P
 from . import spec as S
+from . import terrain as T
 from . import world_xml as W
 
 DEFAULT_POSE = {   # radians, a slight crouch; used for resets only
@@ -38,6 +39,7 @@ class EnvConfig:
     soc_range: tuple = (0.3, 1.0)        # initial state of charge
     max_seconds: float = 3600.0          # time limit (truncation, not death)
     start: str = "standing"              # "standing" | "lying" | "random"
+    terrain_level: float = 1.0           # 0 lab floor, 1 ordinary home, 2+ harder (see terrain.py)
     randomize_layout: bool = True
     randomize_physics: bool = True
     sensor_noise: bool = True
@@ -97,7 +99,8 @@ class HomebodyEnv(gym.Env):
         self.robot = idb("robot")
         self.dock = idb("dock")
         self.furniture = [idb(f"furniture_{k}") for k in range(W.ROOM.n_furniture)]
-        self.rug = idb("rug")
+        self.terrain = T.Terrain(m, W.ROOM.size)
+        self.terrain_state = None
         self.sole = {s: idg(f"sole_{s}") for s in "lr"}
         self.plate = {"a": idg("dock_plate_a"), "b": idg("dock_plate_b")}
         self.beacon = ids("beacon")
@@ -109,6 +112,8 @@ class HomebodyEnv(gym.Env):
         self.robot_geom = np.array([root_of[m.geom_bodyid[g]] == self.robot for g in range(m.ngeom)])
         self.hand_geoms = {idg("hand_l"), idg("hand_r")}
         self.foot_geoms = set(self.sole.values())
+        self.limb_end = np.zeros(m.ngeom, bool)          # parts allowed to take hits: soles, hands
+        self.limb_end[list(self.foot_geoms | self.hand_geoms)] = True
         self.sensor_slice = {}
         for name in ["imu_acc", "imu_gyro", "imu_quat"] + [f"fsr_{s}_{k}" for s in "lr" for k in range(4)]:
             sid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, name)
@@ -161,11 +166,12 @@ class HomebodyEnv(gym.Env):
         super().reset(seed=seed)
         m, d, rng = self.model, self.data, self.np_random
         mujoco.mj_resetData(m, d)
-        if self.cfg.randomize_layout:
-            self._randomize_layout()
         if self.cfg.randomize_physics:
             self._randomize_physics()
+        self._randomize_layout()
         self._place_robot()
+        self.terrain.place_clutter(rng, self.cfg.terrain_level, self._taken + [(d.qpos[0:2].copy(), 0.35)],
+                                   d.qpos, d.qvel)
         self.battery.reset(rng.uniform(*self.cfg.soc_range))
         self.charger.reset()
         self.servos.reset(ambient=rng.uniform(18, 30))
@@ -177,35 +183,46 @@ class HomebodyEnv(gym.Env):
         self._set_voltage(self.battery.v)
         mujoco.mj_forward(m, d)
         self.info = self._info()
-        return self._obs(), dict(self.info)
+        info = dict(self.info)
+        info["terrain"] = self.terrain_state
+        return self._obs(), info
 
     def _randomize_layout(self):
-        m, rng = self.model, self.np_random
+        m, rng, lvl = self.model, self.np_random, self.cfg.terrain_level
         X, Y = W.ROOM.size[0] / 2, W.ROOM.size[1] / 2
-        # dock against a random wall, facing into the room
-        wall = rng.integers(4)
-        back = S.DOCK.base_size[0] / 2 + 0.01
-        along = rng.uniform(-0.7, 0.7)
-        pos, yaw = {
-            0: ((X - back, along * Y), math.pi),
-            1: ((-X + back, along * Y), 0.0),
-            2: ((along * X, Y - back), -math.pi / 2),
-            3: ((along * X, -Y + back), math.pi / 2),
-        }[int(wall)]
-        # body x axis points into the room: the post is at local -x, i.e. at the wall
-        self._set_body(self.dock, pos, yaw)
-        taken = [(np.array(pos), 0.6)]
-        for b in self.furniture:
-            g = m.body_geomadr[b]
-            r = float(np.hypot(*m.geom_size[g][:2]))
-            for _ in range(50):
-                p = np.array([rng.uniform(-X + r, X - r), rng.uniform(-Y + r, Y - r)])
-                if all(np.linalg.norm(p - q) > r + rq + 0.3 for q, rq in taken):
-                    break
-            taken.append((p, r))
-            self._set_body(b, p, rng.uniform(-math.pi, math.pi))
-        self._set_body(self.rug, (rng.uniform(-X + 1, X - 1), rng.uniform(-Y + 0.7, Y - 0.7)), rng.uniform(0, math.pi))
-        self._taken = taken
+        self.terrain.generate_heights(rng, lvl)
+        if self.cfg.randomize_layout or not hasattr(self, "_layout"):
+            # dock against a random wall, facing into the room
+            wall = rng.integers(4)
+            back = S.DOCK.base_size[0] / 2 + 0.01
+            along = rng.uniform(-0.7, 0.7)
+            pos, yaw = {
+                0: ((X - back, along * Y), math.pi),
+                1: ((-X + back, along * Y), 0.0),
+                2: ((along * X, Y - back), -math.pi / 2),
+                3: ((along * X, -Y + back), math.pi / 2),
+            }[int(wall)]
+            layout = [(self.dock, np.array(pos), yaw, S.DOCK.base_size[0] / 2, S.DOCK.base_size[1] / 2, 0.6)]
+            taken = [(np.array(pos), 0.6)]
+            for b in self.furniture:
+                g = m.body_geomadr[b]
+                hx, hy = m.geom_size[g][:2]
+                r = float(np.hypot(hx, hy))
+                for _ in range(50):
+                    p = np.array([rng.uniform(-X + r, X - r), rng.uniform(-Y + r, Y - r)])
+                    if all(np.linalg.norm(p - q) > r + rq + 0.3 for q, rq in taken):
+                        break
+                taken.append((p, r))
+                layout.append((b, p, rng.uniform(-math.pi, math.pi), hx, hy, r))
+            self._layout = layout
+        # bodies sit on the (levelled) floor under them; the dock's x axis points into the room
+        for b, p, yaw, hx, hy, r in self._layout:
+            self._set_body(b, p, yaw)
+            m.body_pos[b][2] = self.terrain.flatten(p[0], p[1], yaw, hx, hy)
+        self._taken = [(p, r) for _, p, _, _, _, r in self._layout]
+        self.terrain_state = self.terrain.randomize(rng, lvl, self._taken, self._set_body,
+                                                    sole_scale=getattr(self, "sole_scale", 1.0))
+        self.terrain.upload()
 
     def _set_body(self, b, xy, yaw):
         self.model.body_pos[b][:2] = xy
@@ -214,8 +231,7 @@ class HomebodyEnv(gym.Env):
     def _randomize_physics(self):
         m, rng, n = self.model, self.np_random, self.nominal
         m.body_mass[:] = n["body_mass"] * rng.uniform(0.9, 1.1, m.nbody)
-        m.geom_friction[:] = n["geom_friction"]
-        m.geom_friction[:, 0] *= rng.uniform(0.75, 1.25)
+        self.sole_scale = rng.uniform(0.85, 1.1)               # sole rubber: worn/dusty .. fresh
         self.strength = rng.uniform(0.85, 1.05, S.N_JOINTS)   # servo-to-servo spread
 
     def _place_robot(self):
@@ -246,8 +262,11 @@ class HomebodyEnv(gym.Env):
         q[self.qadr] = np.clip(q[self.qadr], lo, hi)
         if mode == "standing":   # drop the robot so the lower sole rests 2 mm above the floor
             mujoco.mj_kinematics(m, d)
-            low = min(d.geom_xpos[g][2] - m.geom_size[g][2] for g in self.sole.values())
+            low = min(d.geom_xpos[g][2] - m.geom_size[g][2] - self.terrain.height_at(*d.geom_xpos[g][:2])
+                      for g in self.sole.values())
             q[2] += 0.002 - low
+        else:
+            q[2] += self.terrain.height_at(*p)
 
     def _jid(self, name):
         return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
@@ -297,32 +316,31 @@ class HomebodyEnv(gym.Env):
         return self._obs(), reward, terminated, truncated, dict(self.info)
 
     def _impacts(self):
-        """Excess normal force on any robot part except feet and hands hitting something."""
+        """Excess normal force on any robot part except feet and hands hitting the world."""
         d = self.data
-        total = 0.0
-        f6 = np.zeros(6)
-        for i in range(d.ncon):
-            c = d.contact[i]
-            g1, g2 = c.geom1, c.geom2
-            for g, other in ((g1, g2), (g2, g1)):
-                if self.robot_geom[g] and not self.robot_geom[other] and g not in self.foot_geoms \
-                        and g not in self.hand_geoms:
-                    mujoco.mj_contactForce(self.model, d, i, f6)
-                    total += max(f6[0] - self.cfg.damage_force, 0.0)
-        return total
+        if d.ncon == 0:
+            return 0.0
+        g = d.contact.geom                          # (ncon, 2)
+        efc = d.contact.efc_address
+        r1, r2 = self.robot_geom[g[:, 0]], self.robot_geom[g[:, 1]]
+        part = np.where(r1, g[:, 0], g[:, 1])
+        mask = (r1 ^ r2) & ~self.limb_end[part] & (efc >= 0)
+        if not mask.any():
+            return 0.0
+        fn = d.efc_force[efc[mask]]                 # elliptic cones: first row is the normal force
+        return float(np.maximum(fn - self.cfg.damage_force, 0.0).sum())
 
     def _docked(self) -> bool:
         """Each sole touches a different plate, and no sole bridges both (the dock would refuse)."""
         d = self.data
-        touch = {s: set() for s in "lr"}
-        for i in range(d.ncon):
-            c = d.contact[i]
-            for s, sg in self.sole.items():
-                for p, pg in self.plate.items():
-                    if {c.geom1, c.geom2} == {sg, pg}:
-                        touch[s].add(p)
-        l, r = touch["l"], touch["r"]
-        return len(l) == 1 and len(r) == 1 and l != r
+        if d.ncon == 0:
+            return False
+        g = d.contact.geom
+        lo, hi = np.minimum(g[:, 0], g[:, 1]), np.maximum(g[:, 0], g[:, 1])
+        pair = lambda a, b: bool(np.any((lo == min(a, b)) & (hi == max(a, b))))
+        L = [pair(self.sole["l"], self.plate[p]) for p in "ab"]
+        R = [pair(self.sole["r"], self.plate[p]) for p in "ab"]
+        return sum(L) == 1 and sum(R) == 1 and L != R
 
     # -------------------------------------------------------------- sensing
     def _ir(self):
@@ -375,10 +393,17 @@ class HomebodyEnv(gym.Env):
             return {"proprio": vec, "eye": self._eye_image()}
         return vec
 
+    def _sync_hfield(self, r):
+        if getattr(r, "_hf_version", -1) != self.terrain.version:
+            r._gl_context.make_current()
+            mujoco.mjr_uploadHField(self.model, r._mjr_context, self.terrain.hf)
+            r._hf_version = self.terrain.version
+
     def _eye_image(self):
         h, w = self.cfg.camera
         if self._eye is None:
             self._eye = mujoco.Renderer(self.model, h, w)
+        self._sync_hfield(self._eye)
         self._eye.update_scene(self.data, camera="eye")
         return self._eye.render()
 
@@ -404,6 +429,7 @@ class HomebodyEnv(gym.Env):
     def render(self, camera="overview", width=960, height=540):
         if self._renderer is None or self._renderer.width != width:
             self._renderer = mujoco.Renderer(self.model, height, width)
+        self._sync_hfield(self._renderer)
         self._renderer.update_scene(self.data, camera=camera)
         return self._renderer.render()
 

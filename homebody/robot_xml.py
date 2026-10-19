@@ -120,7 +120,7 @@ def defaults_xml() -> str:
       <geom contype="2" conaffinity="1" condim="3" friction="0.8 0.02 0.001" group="2"/>
     </default>
     <default class="foot">
-      <geom contype="6" conaffinity="5" condim="4" friction="0.9 0.02 0.001" priority="1" group="2"/>
+      <geom contype="6" conaffinity="5" condim="4" friction="0.9 0.02 0.001" group="2"/>
     </default>
     <default class="visual">
       <geom contype="0" conaffinity="0" group="2"/>

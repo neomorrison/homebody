@@ -19,16 +19,18 @@ ap.add_argument("--brain", default="hold", choices=["hold", "babble", "limp"])
 ap.add_argument("--start", default="standing")
 ap.add_argument("--seconds", type=float, default=8)
 ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--terrain", type=float, default=1.0)
 ap.add_argument("--camera", default="track", help="track | overview | eye")
 ap.add_argument("--out", default="media/out.mp4")
 a = ap.parse_args()
 
 import mujoco  # noqa: E402
 
-env = HomebodyEnv(EnvConfig(start=a.start))
+env = HomebodyEnv(EnvConfig(start=a.start, terrain_level=a.terrain))
 obs, info = env.reset(seed=a.seed)
 brain = {"hold": B.make_hold(), "babble": B.make_random(np.random.default_rng(a.seed)), "limp": B.limp}[a.brain]
 r = mujoco.Renderer(env.model, 544, 960)
+env._sync_hfield(r)
 cam = mujoco.MjvCamera()
 cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
 cam.trackbodyid = env.robot

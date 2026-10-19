@@ -32,10 +32,23 @@ design are in [DESIGN.md](DESIGN.md).
 
 ## The world
 
-A 6 x 5 m room with walls, six pieces of furniture, a rug with different friction and the dock against
-a wall. The layout, the starting position, the initial charge, masses (±10%), floor friction (±25%)
-and servo strength (-15%/+5%) are reshuffled every episode so that a brain cannot memorise one room
-or one body.
+A 6 x 5 m room with walls, six pieces of furniture and the dock against a wall. The layout, the
+starting position, the initial charge, masses (�10%), sole rubber condition and servo strength
+(-15%/+5%) are reshuffled every episode so that a brain cannot memorise one room or one body.
+
+The floor is a real home's floor, set by `terrain_level` (0 lab floor, 1 ordinary home, 2+ harder):
+
+| | level 1 |
+|---|---|
+| Unevenness | heightfield regenerated every episode: about 3 mm RMS of bumps (warped boards, settled slab, up to 6 mm), tilted up to 0.5 degree |
+| Floor | tile, laminate, hardwood, concrete or carpet; each with its own sole friction (0.35 to 1.1) and softness |
+| Patches | up to 5 rugs, carpet offcuts, rubber mats (to 1.3), wet spots (0.12 to 0.3) and dusty spots, each a different colour so the camera can learn to read them |
+| Things to step on | 8 and 16 mm door sills, cables, and loose clutter (toy block, ball, book) that slides or rolls when kicked |
+
+Friction is the surface's coefficient against a rubber sole, and the surface always decides it. The
+floor sits under the dock and furniture, which is levelled there, and under rugs, which lie flat.
+
+![terrain](media/terrain.png)
 
 The simulation models what kills a real robot:
 
@@ -53,8 +66,8 @@ The simulation models what kills a real robot:
 
 ```bash
 pip install -r requirements.txt
-python scripts/smoke_test.py                        # 6 physical sanity checks, ~3 s
-python scripts/view.py --brain hold                 # live viewer: posture reflex
+python scripts/smoke_test.py                        # 10 physical sanity checks, ~7 s
+python scripts/view.py --brain hold --terrain 1     # live viewer: posture reflex
 python scripts/view.py --brain babble --start lying # random muscle twitches
 python scripts/record.py --brain babble --out media/babble.mp4
 ```
@@ -71,7 +84,7 @@ analysis and critics; it is never in the observation. Rewards are pluggable: `su
 alive), `energy` (plus stored energy) and `dock_shaped` (plus progress to the dock and staying upright),
 or pass any function of `(info, prev_info)`.
 
-The simulator runs about 680 control steps per second on one CPU core (14x real time).
+The simulator runs about 410 control steps per second on one CPU core (8x real time).
 
 ## Implanting the brain
 
