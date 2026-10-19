@@ -78,10 +78,10 @@ def _servo(name, motor, pos, euler=(0, 0, 0), cls="arm"):
 def _hinge(j: S.Joint, cls="arm"):
     lo, hi = j.range
     m = j.motor
-    if j.slide:     # reflect the motor's armature, damping and friction through the rack and pinion
-        g = j.gear
+    if j.slide:     # rack and pinion: friction reflects through the gear; inertia and damping are kept
+        g = j.gear  # modest (the full reflected rotor inertia, ~30 kg, makes the jaws bounce off objects)
         return (f'<joint name="{j.name}" type="slide" axis="{_f(*j.axis)}" range="{lo} {hi}" class="{cls}" '
-                f'armature="{m.armature * g * g:.4g}" damping="{m.damping * g * g:.4g}" frictionloss="{m.friction * g:.4g}"/>')
+                f'armature="1.0" damping="5" frictionloss="{m.friction * g:.4g}"/>')
     return (f'<joint name="{j.name}" axis="{_f(*j.axis)}" range="{lo} {hi}" class="{cls}" '
             f'armature="{m.armature}" damping="{m.damping}" frictionloss="{m.friction}"/>')
 
@@ -127,7 +127,7 @@ def _arm_xml() -> str:
         stages_open.append(f"""
           <body name="stage_{k + 1}" pos="{pos}">
             <joint name="arm_{k + 1}" type="slide" axis="0 -1 0" range="0 {stroke:.4f}" class="arm"
-                   frictionloss="{S.ARM.friction / n:.3g}" damping="2" armature="0.2"/>
+                   frictionloss="{S.ARM.friction / n:.3g}" damping="2" armature="{1.2 if k == 0 else 0.1}"/>
             <geom name="stage_{k + 1}" type="box" size="{_f(w, L / 2, w)}" mass="{m['stage']}" material="alu" class="arm"/>""")
         stages_close.append("          </body>")
     wrist = f"""
@@ -238,7 +238,7 @@ def servo_position_params(j: S.Joint):
     if not j.slide:
         lo, hi = math.radians(lo), math.radians(hi)
     mid, half = (lo + hi) / 2, (hi - lo) / 2
-    kp = j.motor.stall_torque / j.stiffness_err / j.gear      # motor torque per unit joint error
+    kp = j.motor.stall_torque / j.stiffness_err               # motor torque per unit joint error
     kd = kp * 0.04
     # MuJoCo's actuator length and velocity are in motor units (gear x joint), hence the / gear
     return kp * half, kp * mid, -kp / j.gear, -kd / j.gear
@@ -251,7 +251,7 @@ def actuators_xml(servo_mode: str = S.SERVO_MODE) -> str:
         if name in ("lift", "arm"):
             ax = S.LIFT if name == "lift" else S.ARM
             joint, ratio = ("lift", 1) if name == "lift" else ("arm_1", G.n_stages)
-            kv = 4000.0 * ratio
+            kv = 4000.0 if name == "lift" else 1500.0     # speed-loop stiffness; stable at 250 Hz
             out.append(
                 f'<general name="m_{name}" joint="{joint}" ctrlrange="-1 1" gainprm="{kv * ax.max_speed / ratio:.5g}" '
                 f'biastype="affine" biasprm="0 0 {-kv:.5g}" forcerange="{-ax.max_force * ratio} {ax.max_force * ratio}"/>')

@@ -1,6 +1,7 @@
 """Drive the robot yourself in the MuJoCo viewer.
 
-    python scripts/view.py                 # the home, terrain level 1
+    python scripts/view.py                 # your scanned home, terrain level 1
+    python scripts/view.py --scan          # ...drawn with the textured scan
     python scripts/view.py --terrain 0     # flat lab floor
 
 Keys (click the viewer window first):
@@ -29,9 +30,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--terrain", type=float, default=1.0)
 ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--push-rate", type=float, default=0.0, help="accidental shoves per minute")
+ap.add_argument("--scan", action="store_true", help="draw the textured scan of the home")
 a = ap.parse_args()
 
-env = HomebodyEnv(EnvConfig(terrain_level=a.terrain, push_rate=a.push_rate, reward="chores"))
+env = HomebodyEnv(EnvConfig(terrain_level=a.terrain, push_rate=a.push_rate, reward="chores", scan_visual=a.scan))
 obs, info = env.reset(seed=a.seed)
 state = {"v": 0.0, "w": 0.0, "lift": 0.0, "arm": 0.0, "q": B.STOW_Q.copy(), "grip": False, "reset": False}
 STEP = math.radians(6)
@@ -65,7 +67,8 @@ def key(k):
 
 print(__doc__)
 with mujoco.viewer.launch_passive(env.model, env.data, key_callback=key) as v:
-    v.update_hfield(env.terrain.hf)
+    for h in range(env.model.nhfield):
+        v.update_hfield(h)
     last = 0.0
     while v.is_running():
         t = time.time()
@@ -78,10 +81,11 @@ with mujoco.viewer.launch_passive(env.model, env.data, key_callback=key) as v:
         if time.time() - last > 1.0:
             last = time.time()
             print(f"\r{info['room'] or '?':8s} battery {info['soc'] * 100:5.1f}%  {info['power_w']:5.1f} W  "
-                  f"tidy {info['tidy']}/{info['items_active']}  door {math.degrees(info['door_angle']):4.0f} deg  "
+                  f"tidy {info['tidy']}/{info['items_active']}  "
                   f"{'CHARGING ' if info['charging'] else ''}{'DEAD' if info['dead'] else ''}", end="")
         if term or trunc or state["reset"]:
             obs, info = env.reset()
-            v.update_hfield(env.terrain.hf)
+            for h in range(env.model.nhfield):
+                v.update_hfield(h)
             state.update(v=0.0, w=0.0, lift=0.0, arm=0.0, q=B.STOW_Q.copy(), grip=False, reset=False)
         time.sleep(max(0.0, env.dt - (time.time() - t)))

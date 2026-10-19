@@ -52,10 +52,10 @@ Servo, hub-motor and battery figures are reseller listings or estimates; bench-t
 ## Geometry
 
 ```
-  head camera (pan/tilt) ── 1.68 m
+  head camera (pan/tilt) ── 1.88 m
           │
         mast (x -0.17, y +0.08)
-          │  carriage + telescope (arm height 0.22 .. 1.52 m) ──> slides out to the right, 0..0.54 m
+          │  carriage + telescope (arm height 0.12 .. 1.62 m) ──> slides out to the right, 0..0.54 m
           │                                              └ wrist yaw ─ pitch ─ roll ─ parallel jaws (+ palm camera)
   ┌──────────────────────────────┐
   │ deck tote      lidar ▶       │  base 0.50 x 0.30 m, hub wheels at ±0.19 m, casters front/back
@@ -65,6 +65,18 @@ Servo, hub-motor and battery figures are reseller listings or estimates; bench-t
 The robot reaches sideways, so for the washer it parks alongside the machine and slides the arm
 straight into the drum. The retracted gripper sits beside the tote, so a 120° wrist swing drops what
 it holds into the tote.
+
+## Fitted to the owner's home (from the 2026-10-19 scan)
+
+- **Mast:** 20 cm taller (1.8 m rail). The dryer door centre measured 1.55 m, and the arm now reaches
+  1.57 m, enough to slide the gripper into the drum.
+- **Width:** at 64 cm across the outriggers, the robot fits the 1.0 m hallway, with about 0.9 m to
+  turn in place.
+- **Dock:** on the foyer wall. The bedroom walls are taken by the bed, desk, mirror and the door's
+  swing, and the foyer is central.
+- **Laundry closet door:** opens toward whoever opens it, so the robot can pull it only about 12°
+  before its own body is in the way. The real louvered folding doors need less room, so the sim is
+  pessimistic here.
 
 ## Durability and falls
 

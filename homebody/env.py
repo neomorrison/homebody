@@ -46,12 +46,12 @@ class EnvConfig:
     soc_range: tuple = (0.3, 1.0)
     max_seconds: float = 1800.0
     terrain_level: float = 1.0           # 0 lab floor, 1 ordinary home, 2+ harder (terrain.py)
-    n_trash: int = 3
-    n_clothes: int = 3
-    n_pods: int = 4
+    kinds: tuple = tuple(I.KINDS)        # which of the owner's clutter to put out (see items.py)
+    scatter: bool = False                # clutter anywhere on free floor, not where it was in the scan
+    item_dropout: float = 0.0            # leave each item out with this probability
     start_docked: float = 0.0            # probability of starting on the charger
-    start_room: tuple = ("bedroom", "living")
-    door_open_prob: float = 0.4          # laundry door starts ajar
+    start_room: tuple = ("bedroom", "hallway", "living", "kitchen")
+    scan_visual: bool = False            # draw the textured scan (cameras see the real rooms; slower to build)
     push_rate: float = 0.0               # accidental shoves per minute
     push_force: tuple = (20.0, 80.0)     # N, applied near the top of the mast for 0.2 s
     randomize_physics: bool = True
@@ -95,7 +95,7 @@ class HomebodyEnv(gym.Env):
     def __init__(self, config: EnvConfig | None = None, render_mode: str | None = None):
         self.cfg = config or EnvConfig()
         self.render_mode = render_mode
-        self.model = W.build_model(self.cfg.servo_mode)
+        self.model = W.build_model(self.cfg.servo_mode, self.cfg.scan_visual)
         self.data = mujoco.MjData(self.model)
         m = self.model
         self.n_sub = S.PHYSICS_HZ // S.CONTROL_HZ
@@ -125,18 +125,16 @@ class HomebodyEnv(gym.Env):
         self.cliff_sites = [Si(f"cliff_{k}") for k in ("fl", "fr", "rl", "rr")]
         self.ir_sites = [Si(f"ir_{k}") for k in ("front", "left", "back", "right")]
         self.head_body = B("head_tilt")
-        self.door_q, self.door_v = qa(H.LAUNDRY_DOOR.name), va(H.LAUNDRY_DOOR.name)
-        self.door_jid = J(H.LAUNDRY_DOOR.name)
-        self.door_range = m.jnt_range[self.door_jid].copy()
-        self.lever_q = qa("lever_out")
+        self.doors = {d.name: dict(spec=d, q=qa(d.name), v=va(d.name), jid=J(d.name), range=m.jnt_range[J(d.name)].copy(),
+                                   lever=qa(f"{d.name}_lever_a") if d.latch == "lever" else None) for d in H.DOORS}
         self.mdoor = {n: (qa(f"{n}_door"), va(f"{n}_door")) for n in ("washer", "dryer")}
         self.chair_q, self.chair_v = qa("chair"), va("chair")
         self.bins = {b.name: B(b.name) for b in H.BINS}
-        self.floor_room = {r: (B(f"floor_{r}"), Gm(f"floor_{r}")) for r, k in H.ROOM_FLOOR.items() if k != "hardwood"}
         containers = {b.name: Si(f"in_{b.name}") for b in H.BINS}
+        containers.update({name: Si(f"in_{name}") for name, _, _ in H.ZONES})
         containers.update({"washer": Si("in_washer"), "dryer": Si("in_dryer"), "tote": Si("tote")})
         self.items = I.Items(m, containers)
-        self.terrain = T.Terrain(m, H.EXTENT)
+        self.terrain = T.Terrain(m, H.EXTENT, static_height=H.static_height)
         self.terrain_state = None
 
         root_of = m.body_rootid
@@ -236,13 +234,10 @@ class HomebodyEnv(gym.Env):
         self._place_chair_and_doors()
         rects = self._obstacles() + [(*d.qpos[self.rq:self.rq + 2], 0.35, 0.35, 0.0)]
         free = lambda p, r: H.is_free(p, r, rects)
-        bucket = d.site_xpos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, "in_pod_bucket")].copy()
-        tops = [(f.center, f.half[:2], 2 * f.half[2]) for f in H.FURNITURE if f.name in ("desk", "bed")]
         mujoco.mj_kinematics(m, d)
-        bucket = d.site_xpos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SITE, "in_pod_bucket")].copy()
-        bucket[2] -= H.BINS[2].height / 2
-        self.items.place(rng, self.cfg.n_trash, self.cfg.n_clothes, self.cfg.n_pods, free, d.qpos, d.qvel,
-                         self.terrain.height_at, bucket, tops)
+        bucket = d.xpos[self.bins["pod_bucket"]].copy()
+        self.items.place(rng, self.cfg.kinds, d.qpos, d.qvel, self.terrain.height_at, free, bucket,
+                         scatter=self.cfg.scatter, dropout=self.cfg.item_dropout)
         self.battery.reset(rng.uniform(*self.cfg.soc_range))
         self.charger.reset()
         self.motors.reset(ambient=rng.uniform(18, 30))
@@ -261,9 +256,9 @@ class HomebodyEnv(gym.Env):
         return self._obs(), info
 
     def _obstacles(self):
-        extra = [(*self.model.body_pos[self.bins[b.name]][:2], b.inner[0] + 0.01, b.inner[1] + 0.01, 0.0) for b in H.BINS]
         (x, y), yaw = H.DOCK_POSE
-        extra.append((x + 0.15 * math.cos(yaw), y + 0.15 * math.sin(yaw), 0.15, 0.2, yaw))
+        extra = [(x + 0.15 * math.cos(yaw), y + 0.15 * math.sin(yaw), 0.15, 0.2, yaw),
+                 (*H.CHAIR_HOME, 0.4, 0.4, 0.0)]
         return H.obstacle_rects(extra)
 
     def _layout(self):
@@ -271,38 +266,26 @@ class HomebodyEnv(gym.Env):
         tr = self.terrain
         tr.generate_heights(rng, lvl)
         fl = lambda c, half, yaw=0.0, pad=0.06: tr.flatten(c[0], c[1], yaw, half[0], half[1], pad)
-        for f in H.FURNITURE:
-            m.body_pos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f.name)][2] = fl(f.center, f.half, f.yaw)
         for name in ("washer", "dryer"):
             b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
             mc = H.WASHER if name == "washer" else H.DRYER
-            m.body_pos[b][2] = fl(H.WASHER.center, H.WASHER.half) + mc.base_z
+            m.body_pos[b][2] = fl(H.WASHER.center, (H.WASHER.half[1], H.WASHER.half[0])) + mc.base_z
         (x, y), yaw = H.DOCK_POSE
         c, s = math.cos(yaw), math.sin(yaw)
-        m.body_pos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "dock")][2] = \
-            tr.flatten(x + 0.3 * c, y + 0.3 * s, yaw, 0.35, 0.3)
-        for room, (b, g) in self.floor_room.items():
-            x0, y0, x1, y1 = H.ROOMS[room]
-            m.body_pos[b][2] = fl(((x0 + x1) / 2, (y0 + y1) / 2), ((x1 - x0) / 2, (y1 - y0) / 2), pad=0.0)
-            tr.set_surface(g, H.ROOM_FLOOR[room], rng, lvl, self.tyre_scale)
-        base_rects = H.obstacle_rects()
+        m.body_pos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "dock")][2] = tr.flatten(
+            x + 0.3 * c, y + 0.3 * s, yaw, 0.35, 0.3)
         for bdef in H.BINS:
             b = self.bins[bdef.name]
             p = np.array(bdef.center, float)
-            if bdef.jitter:
-                for _ in range(20):
-                    q = p + rng.uniform(-bdef.jitter, bdef.jitter, 2)
-                    if H.is_free(q, max(bdef.inner) + 0.02, base_rects):
-                        p = q
-                        break
             m.body_pos[b][:2] = p
-            m.body_pos[b][2] = fl(p, (bdef.inner[0] + 0.01, bdef.inner[1] + 0.01))
+            m.body_pos[b][2] = bdef.z if bdef.z else fl(p, (bdef.inner[0] + 0.01, bdef.inner[1] + 0.01))
         rects = self._obstacles()
-        living = {"living": H.ROOMS["living"]}
+        open_floor = {r: H.ROOMS[r] for r in ("living", "hallway", "kitchen", "foyer")}
         sills = [(np.array(xy), yaw) for xy, yaw in H.DOORWAYS.values()]
         self.terrain_state = tr.randomize(
             rng, lvl, self._set_body, lambda p, r: H.is_free(p, r, rects),
-            sill_spots=sills, patch_free=lambda p, r: H.is_free(p, r, rects, living), tyre_scale=self.tyre_scale)
+            sill_spots=sills, patch_free=lambda p, r: H.is_free(p, r, rects, open_floor),
+            floor_choices=("laminate", "hardwood"), tyre_scale=self.tyre_scale)
         tr.upload()
 
     def _set_body(self, b, xy, yaw):
@@ -313,11 +296,7 @@ class HomebodyEnv(gym.Env):
         g = S.GEOM
         c, s = math.cos(yaw), math.sin(yaw)
         pts = [(0, g.wheel_track / 2), (0, -g.wheel_track / 2), (g.caster_x, 0), (-g.caster_x, 0)]
-        z = max(self.terrain.height_at(xy[0] + c * px - s * py, xy[1] + s * px + c * py) for px, py in pts)
-        room = H.room_of(xy)
-        if room in self.floor_room:
-            z = max(z, self.model.body_pos[self.floor_room[room][0]][2] + (0.008 if H.ROOM_FLOOR[room] == "carpet" else 0.002))
-        return z
+        return max(self.terrain.height_at(xy[0] + c * px - s * py, xy[1] + s * px + c * py) for px, py in pts)
 
     def _pose_robot(self, xy, yaw):
         d, g = self.data, S.GEOM
@@ -334,10 +313,11 @@ class HomebodyEnv(gym.Env):
         rng = self.np_random
         rects = self._obstacles()
         rooms = {r: H.ROOMS[r] for r in self.cfg.start_room}
-        p = np.array([-2.0, 0.6])
-        for _ in range(200):
-            q = np.array([rng.uniform(-4.5, 4.5), rng.uniform(-3, 3)])
-            if H.is_free(q, 0.38, rects, rooms):
+        p = np.array(H.A(-1.0, 0.5))
+        X, Y = H.EXTENT[0] / 2, H.EXTENT[1] / 2
+        for _ in range(400):
+            q = np.array([rng.uniform(-X, X), rng.uniform(-Y, Y)])
+            if H.is_free(q, 0.48, rects, rooms):
                 p = q
                 break
         self._pose_robot(p, rng.uniform(-math.pi, math.pi))
@@ -358,7 +338,9 @@ class HomebodyEnv(gym.Env):
         d.qpos[self.chair_q:self.chair_q + 7] = [cx, cy, self.terrain.height_at(cx, cy) + 0.012,
                                                  math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]
         d.qvel[self.chair_v:self.chair_v + 6] = 0
-        d.qpos[self.door_q] = 0.0 if rng.uniform() > self.cfg.door_open_prob else -rng.uniform(0.3, 1.5)
+        for dd in self.doors.values():
+            spec = dd["spec"]
+            d.qpos[dd["q"]] = math.radians(spec.open_deg) * rng.uniform(0.75, 0.98) if rng.uniform() < spec.open_prob else 0.0
         for n, (q, v) in self.mdoor.items():
             d.qpos[q] = 0.0 if rng.uniform() < 0.8 else rng.uniform(0.5, 1.8)
 
@@ -398,19 +380,23 @@ class HomebodyEnv(gym.Env):
             a = d.qpos[q]
             if a < 0.12:
                 d.qfrc_applied[v] -= 6.0 * (0.12 - a) / 0.12
+        for dd in self.doors.values():                 # magnetic catch on the laundry closet door
+            if dd["spec"].latch == "catch" and d.qpos[dd["q"]] < 0.08:
+                d.qfrc_applied[dd["v"]] -= 4.0 * (0.08 - d.qpos[dd["q"]]) / 0.08
         if self.push is not None and self.push_left > 0:
             force, point = self.push
             mujoco.mj_applyFT(m, d, force, np.zeros(3), point, self.head_body, d.qfrc_applied)
 
     def _latch(self):
-        """The laundry door is locked while shut unless a lever is pressed far enough."""
-        d, door = self.data, H.LAUNDRY_DOOR
-        closed = d.qpos[self.door_q] > -0.03
-        pressed = d.qpos[self.lever_q] > math.radians(door.lever_unlatch_deg)
-        if closed and not pressed:
-            self.model.jnt_range[self.door_jid] = [-0.03, 0.0]
-        else:
-            self.model.jnt_range[self.door_jid] = self.door_range
+        """Lever doors are locked while shut unless a lever is pressed far enough."""
+        d = self.data
+        for dd in self.doors.values():
+            spec = dd["spec"]
+            if spec.latch != "lever":
+                continue
+            closed = d.qpos[dd["q"]] < 0.03
+            pressed = d.qpos[dd["lever"]] > math.radians(spec.lever_unlatch_deg)
+            self.model.jnt_range[dd["jid"]] = [0.0, 0.03] if (closed and not pressed) else dd["range"]
 
     def _maybe_push(self):
         rng = self.np_random
@@ -621,7 +607,8 @@ class HomebodyEnv(gym.Env):
     def _sync_hfield(self, r):
         if getattr(r, "_hf_version", -1) != self.terrain.version:
             r._gl_context.make_current()
-            mujoco.mjr_uploadHField(self.model, r._mjr_context, self.terrain.hf)
+            for h in range(self.model.nhfield):
+                mujoco.mjr_uploadHField(self.model, r._mjr_context, h)
             r._hf_version = self.terrain.version
 
     def _info(self, charging=False, load_i=0.0, charge_i=0.0):
@@ -643,7 +630,8 @@ class HomebodyEnv(gym.Env):
             "lift_height": float(S.GEOM.lift_low + 0.02 + d.qpos[self.lift_q]),
             "arm_extension": float(d.qpos[self.arm_q].sum()),
             "dock_dist": float(np.linalg.norm((d.site_xpos[self.dock_target] - pos)[:2])),
-            "door_angle": float(-d.qpos[self.door_q]), "door_latched": bool(self.model.jnt_range[self.door_jid][0] > -0.1),
+            "doors": {n: round(float(d.qpos[dd["q"]]), 3) for n, dd in self.doors.items()},
+            "door_latched": {n: bool(self.model.jnt_range[dd["jid"]][1] < 0.1) for n, dd in self.doors.items()},
             "washer_door": float(d.qpos[self.mdoor["washer"][0]]), "dryer_door": float(d.qpos[self.mdoor["dryer"][0]]),
             "tidy": tidy, "items": where, "items_active": int(self.items.active.sum()),
             "motor_temp_max": float(self.motors.temp.max()), "pushed": self.push is not None,

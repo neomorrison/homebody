@@ -104,7 +104,7 @@ class AxisSpec:
 
 
 # NEMA17 + 2:1 belt reduction + GT2 20T pulley on a 1.6 m 2040 rail, constant-force spring counterbalance
-LIFT = AxisSpec("lift", stroke=1.30, max_speed=0.15, max_force=120.0, moving_power=10.0, holding_power=4.0,
+LIFT = AxisSpec("lift", stroke=1.50, max_speed=0.15, max_force=120.0, moving_power=10.0, holding_power=4.0,
                 friction=8.0, price_usd=150.0)
 # three-stage telescope on heavy-duty drawer slides, NEMA17 + GT2 belt
 ARM = AxisSpec("arm", stroke=0.54, max_speed=0.25, max_force=60.0, moving_power=8.0, holding_power=3.0,
@@ -170,7 +170,7 @@ class Geometry:
     outrigger_xy: tuple = (0.32, 0.32)  # wide enough that an 80 N shove at the mast top doesn't tip it (sim trials)
     mast_x: float = -0.17
     mast_y: float = 0.08
-    mast_top: float = 1.62
+    mast_top: float = 1.82             # tall enough to reach into the dryer (door centre 1.55 m, measured)
     lift_low: float = 0.10             # telescope height above the floor at the bottom of travel
     arm_x: float = -0.12               # telescope centre line (x)
     arm_root_y: float = 0.18           # inner end of the telescope (left of the mast, so the retracted
@@ -307,7 +307,7 @@ class SensorNoise:
 NOISE = SensorNoise()
 
 CONTROL_HZ = 20
-PHYSICS_HZ = 500
+PHYSICS_HZ = 250        # 4 ms steps: as stable as 500 Hz here (item drift tested), twice as fast
 
 
 # ----------------------------------------------------------------------------

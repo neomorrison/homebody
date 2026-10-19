@@ -3,3 +3,4 @@ __pycache__/
 runs/
 media/*.mp4
 MUJOCO_LOG.TXT
+scans/

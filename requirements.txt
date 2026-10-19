@@ -4,5 +4,6 @@ numpy
 imageio
 imageio-ffmpeg
 pillow
+scipy
 # hardware only
 # pyserial

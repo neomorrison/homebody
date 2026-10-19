@@ -46,8 +46,16 @@ PATCH_SIZES = [(0.9, 0.6, 0.003), (0.7, 0.5, 0.004), (0.3, 0.22, 0.0005), (0.4, 
 SILL_HEIGHTS = [0.004, 0.008]          # half-heights: 8 mm and 16 mm sills
 N_CABLES = 2
 HF_RES = 0.04          # m per heightfield cell
-HF_BASE = 0.05         # floor at z=0 sits this far above the heightfield's zero
-HF_TOP = 0.10          # max representable height above the base
+HF_BASE = 0.05         # floor bumps: z=0 sits this far above the bump heightfield's zero
+HF_TOP = 0.10          # bump heightfield range
+FLOOR_BAND = 0.045     # floor bumps stay within +-this
+ST_BASE = 0.15         # structure heightfield (scanned walls and furniture): floor cells sit this far below z=0
+ST_TOP = 2.45
+
+# Three floors, so contacts stay cheap:
+#   "floor"      bump heightfield, collides with the robot's wheels, casters and body only
+#   "floor_flat" a plane at z=0 for loose items (they don't need millimetre bumps)
+#   "structure"  scanned walls and furniture, collides with everything; flat floor cells sit below z=0
 
 
 @dataclass
@@ -64,20 +72,24 @@ def _f(*v):
     return " ".join(f"{x:.5g}" for x in v)
 
 
-def hfield_shape(room_size, margin=0.15):
+def hfield_shape(room_size, margin=0.0):
     rx, ry = room_size[0] / 2 + margin, room_size[1] / 2 + margin
     return rx, ry, int(round(2 * ry / HF_RES)) + 1, int(round(2 * rx / HF_RES)) + 1
 
 
 def assets_xml(room_size) -> str:
     rx, ry, nrow, ncol = hfield_shape(room_size)
-    return f'<hfield name="floor" nrow="{nrow}" ncol="{ncol}" size="{_f(rx, ry, HF_TOP, 0.05)}"/>'
+    return (f'<hfield name="floor" nrow="{nrow}" ncol="{ncol}" size="{_f(rx, ry, HF_TOP, 0.05)}"/>'
+            f'<hfield name="structure" nrow="{nrow}" ncol="{ncol}" size="{_f(rx, ry, ST_TOP, 0.05)}"/>')
 
 
 def world_xml() -> str:
     """Static floor pieces. Goes inside <worldbody>."""
     surf = 'priority="2" condim="4" friction="0.6 0.02 0.001"'
-    out = [f'<geom name="floor" type="hfield" hfield="floor" pos="0 0 {-HF_BASE}" material="floor" {surf}/>',
+    out = [f'<geom name="floor" type="hfield" hfield="floor" pos="0 0 {-HF_BASE}" {surf} contype="0" conaffinity="2" '
+           f'group="3" rgba="0 0 0 0"/>',
+           f'<geom name="floor_flat" type="plane" size="0 0 0.05" material="floor" {surf} contype="8" conaffinity="1"/>',
+           f'<geom name="structure" type="hfield" hfield="structure" pos="0 0 {-ST_BASE}" material="structure" {surf}/>',
            # out-of-sight shelf where unused clutter waits
            f'<geom name="storage" type="box" size="1 1 0.05" pos="30 0 -1" {surf} rgba="0 0 0 0"/>']
     for k, (x, y, z) in enumerate(PATCH_SIZES):
@@ -103,7 +115,9 @@ def _smooth_noise(rng, nrow, ncol, sigma_cells):
 
 
 class Terrain:
-    def __init__(self, model, room_size):
+    def __init__(self, model, room_size, static_height=None):
+        """``static_height(X, Y)`` (vectorised) gives fixed structure (walls, furniture) merged into
+        the heightfield on upload; floor bumps apply where it is zero."""
         m = model
         self.m = m
         self.rx, self.ry, self.nrow, self.ncol = hfield_shape(room_size)
@@ -111,6 +125,7 @@ class Terrain:
         name = lambda t, n: mujoco.mj_name2id(m, t, n)
         B, G, J = mujoco.mjtObj.mjOBJ_BODY, mujoco.mjtObj.mjOBJ_GEOM, mujoco.mjtObj.mjOBJ_JOINT
         self.hf = name(mujoco.mjtObj.mjOBJ_HFIELD, "floor")
+        self.hf_structure = name(mujoco.mjtObj.mjOBJ_HFIELD, "structure")
         self.floor_geom = name(G, "floor")
         self.floor_mat = name(mujoco.mjtObj.mjOBJ_MATERIAL, "floor")
         self.patch = [(name(B, f"patch_{k}"), name(G, f"patch_{k}")) for k in range(len(PATCH_SIZES))]
@@ -121,6 +136,7 @@ class Terrain:
         xs = np.linspace(-self.rx, self.rx, self.ncol)
         ys = np.linspace(-self.ry, self.ry, self.nrow)
         self.X, self.Y = np.meshgrid(xs, ys)
+        self.static = np.zeros_like(self.X) if static_height is None else static_height(self.X, self.Y)
 
     # --------------------------------------------------------------- heights
     def height_at(self, x, y) -> float:
@@ -139,7 +155,7 @@ class Terrain:
         h = np.zeros((self.nrow, self.ncol))
         tilt = 0.0
         if level > 0:
-            tilt = level * rng.uniform(0, 0.5)                       # degrees
+            tilt = level * rng.uniform(0, 0.15)                      # degrees (whole apartment: ~1.5 cm end to end)
             a = rng.uniform(0, 2 * math.pi)
             g = math.tan(math.radians(tilt))
             h += g * (math.cos(a) * self.X + math.sin(a) * self.Y)
@@ -149,7 +165,7 @@ class Terrain:
                 s = rng.uniform(0.05, 0.15)
                 h += level * rng.uniform(-0.006, 0.006) * np.exp(-((self.X - cx) ** 2 + (self.Y - cy) ** 2) / (2 * s * s))
         h -= h.mean()
-        self.heights = np.clip(h, -HF_BASE + 0.001, HF_TOP - HF_BASE - 0.001)
+        self.heights = np.clip(h, -FLOOR_BAND + 0.001, FLOOR_BAND - 0.001)
         self.tilt = tilt
         # bumpiness without the tilt: residual of a least-squares plane
         A = np.stack([self.X.ravel(), self.Y.ravel(), np.ones(self.X.size)], 1)
@@ -169,9 +185,14 @@ class Terrain:
         return z
 
     def upload(self):
-        """Write heights into the model (call after all flatten() calls)."""
-        data = (self.heights + HF_BASE) / HF_TOP
-        self.m.hfield_data[:] = np.clip(data, 0, 1).ravel()
+        """Write both heightfields into the model (call after all flatten() calls)."""
+        m = self.m
+        a = m.hfield_adr[self.hf]
+        n = self.nrow * self.ncol
+        m.hfield_data[a:a + n] = np.clip((self.heights + HF_BASE) / HF_TOP, 0, 1).ravel()
+        a = m.hfield_adr[self.hf_structure]
+        st = np.where(self.static > 0.03, self.static + ST_BASE, 0.0)
+        m.hfield_data[a:a + n] = np.clip(st / ST_TOP, 0, 1).ravel()
         self.version += 1
 
     # --------------------------------------------------------------- surfaces

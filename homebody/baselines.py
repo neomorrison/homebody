@@ -135,6 +135,7 @@ def move_grip(env, target, servos_fn, seconds, lift_gain=10.0, rise_first=False)
 
 DROP_IN_TOTE = STOW_Q.copy()
 DROP_IN_TOTE[0], DROP_IN_TOTE[1] = math.radians(120), math.radians(90)
+DROP_IN_TOTE[2] = math.radians(90)          # roll so the jaws open sideways: otherwise the item rests on the lower jaw
 
 
 def pick_into_tote(env, body):
@@ -154,14 +155,16 @@ def pick_into_tote(env, body):
     return run(env, 2, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, q_rel)))
 
 
-def open_lever_door(env, lever_geom="lever_out"):
+def open_lever_door(env, lever_geom="bedroom_door_lever_b"):
     """Press a lever handle down with the fingertips, then push the door with the palm.
     Needs the robot parked beside the door with the lever within reach. Returns the last info."""
     m, d = env.model, env.data
-    lever = d.geom_xpos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, lever_geom)].copy()
+    g = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, lever_geom)
+    lever = d.geom_xpos[g].copy()
+    toward_end = -d.geom_xmat[g].reshape(3, 3)[:, 0]          # the lever's free end, away from its pivot
     q_fist = STOW_Q.copy()
     q_fist[0] = math.pi / 2                                   # palm parallel to the door
-    above = lever + np.array([-0.04, 0, 0.035])               # fingertips just over the lever's end
+    above = lever + 0.04 * toward_end + np.array([0, 0, 0.035])   # fingertips just over the lever's end
     sv = lambda e: servo_duty(e, q_fist)
     move_grip(env, above + [0, 0, 0.12], sv, 9, rise_first=True)
     move_grip(env, above, sv, 3, lift_gain=4.0)
@@ -170,3 +173,18 @@ def open_lever_door(env, lever_geom="lever_out"):
     hold[2] += 0.01
     to_base_y = d.xmat[env.robot].reshape(3, 3)[:, 1]
     return move_grip(env, hold - 0.40 * to_base_y, sv, 5, lift_gain=6.0)   # push with the palm
+
+
+def pull_knob_door(env, knob_geom="laundry_door_knob_a", pull=0.2):
+    """Grip a door knob from above and pull it toward the robot (draws the telescope in), breaking
+    the magnetic catch. Needs the robot parked beside the door, clear of its swing."""
+    m, d = env.model, env.data
+    knob = d.geom_xpos[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, knob_geom)].copy()
+    q_open = STOW_Q.copy()
+    q_open[0] = math.pi / 2                  # jaws open along the knob's sides
+    q_open[3] = 0.055
+    move_grip(env, knob + [0, 0, 0.12], lambda e: servo_duty(e, q_open), 9, rise_first=True)
+    move_grip(env, knob - [0, 0, 0.02], lambda e: servo_duty(e, q_open), 4, lift_gain=6.0)   # fingers wrap the knob
+    run(env, 1.0, lambda e: command(e, servos=servo_duty(e, q_open, grip=1)))
+    _, ext, _ = cartesian_goal(env, knob)
+    return run(env, 4, lambda e: command(e, arm=arm_cmd(e, ext - pull), servos=servo_duty(e, q_open, grip=1)))
