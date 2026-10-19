@@ -1,54 +1,61 @@
 """The robot, as parts you can buy.
 
-Everything physical lives here: link lengths, masses, which servo drives which
-joint, the battery, the electronics and the charging dock. The simulator
-(``robot_xml``, ``world_xml``, ``env``) and the hardware runtime
-(``interface``) both read this file, so the body you train is the body you
-build. Change a number here and both sides change together.
+A Stretch-style house robot built from cheap parts:
 
-Servo figures are reseller-listed values for Feetech bus servos (no official
-datasheet was available when this was written). Check them against the parts
-you receive: ``scripts/identify_servo.py`` (planned) will fit the motor model
-to a real servo on a bench.
+* base: two hoverboard hub motors on a plywood/aluminium chassis, steel
+  ballast low down, casters front and rear, anti-tip outrigger wheels at the
+  corners, and a tote on the deck for carrying laundry and trash;
+* a 1.6 m mast with a belt-driven lift, counterbalanced by a constant-force
+  spring so the stepper only moves the payload;
+* a telescoping arm (three drawer-slide stages, one stepper and belt) that
+  slides out sideways, so heavy loads push along slides instead of twisting a
+  joint, and reaches straight into a washer or dryer drum;
+* a three-axis wrist (yaw, pitch, roll) and a soft two-finger gripper on
+  Feetech bus servos, with a camera in the palm;
+* a pan/tilt head camera at the top of the mast, a lidar on the front of the
+  base, IMU, bumper, cliff sensors, battery monitor and a dock beacon.
+
+It charges by backing onto a wall dock. Everything physical lives here; the
+simulator and the hardware runtime both read it. Prices are 2026 listings
+where checked, otherwise marked "est". Motor figures marked "approx" must be
+measured on a bench before trusting a trained brain on hardware.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import math
+from dataclasses import dataclass
+
+G_ACC = 9.81
 
 
 # ----------------------------------------------------------------------------
-# actuators ("muscles")
+# actuators
 # ----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class ServoSpec:
-    """A geared DC servo, referenced to the output shaft at the rated voltage.
+class MotorSpec:
+    """A DC motor referenced to its output shaft at the rated voltage, driven by a duty cycle:
 
-    The simulator drives it in open-loop PWM mode: the brain sets a duty cycle
-    in [-1, 1] and the motor makes torque
+        tau = stall_torque * (duty * V_supply / v_rated) - (stall_torque / no_load_speed) * omega
 
-        tau = stall_torque * (duty * V_battery / v_rated) - (stall_torque / no_load_speed) * omega
-
-    clipped to +-stall_torque (the current limit). This is a muscle, not a
-    position command: nothing holds a pose unless the brain keeps pushing.
+    clipped to +-stall_torque (the driver's current limit). Nothing holds still
+    unless the brain keeps pushing.
     """
     name: str
-    stall_torque: float      # N m at v_rated
+    stall_torque: float      # N m at v_rated (or the driver's current limit)
     no_load_speed: float     # rad/s at v_rated
-    stall_current: float     # A at v_rated
+    stall_current: float     # A
     no_load_current: float   # A
     v_rated: float           # V
+    supply: str              # "battery" (straight off the pack) or "12v" (regulated bus)
     mass: float              # kg
-    gear_ratio: float
-    armature: float          # kg m^2, reflected rotor inertia (gear_ratio^2 * rotor)
-    friction: float          # N m, gearbox Coulomb friction
-    damping: float           # N m s/rad, gearbox viscous loss
+    armature: float          # kg m^2, reflected rotor inertia
+    friction: float          # N m
+    damping: float           # N m s/rad
     price_usd: float
-    # first-order winding thermal model (overheat cutout like the real firmware)
-    thermal_resistance: float = 8.0    # K/W, winding -> air
-    thermal_capacity: float = 6.0      # J/K
-    cutout_temp: float = 70.0          # C, firmware disables torque above this
+    thermal_resistance: float = 8.0
+    thermal_capacity: float = 6.0
+    cutout_temp: float = 70.0
 
     @property
     def winding_resistance(self) -> float:
@@ -56,159 +63,196 @@ class ServoSpec:
 
     @property
     def torque_constant(self) -> float:
-        """N m / A at the output shaft."""
         return self.stall_torque / self.stall_current
 
 
-KGCM = 9.80665 / 100.0   # kg.cm -> N m
+KGCM = G_ACC / 100.0
 
-# Feetech STS3250-C002: 12 V, 50 kg.cm peak (16 kg.cm rated), 0.133 s/60deg, 4.2 A stall, 74.5 g, 1:345.
-# Buy the C002 SKU: the C001 is listed with different specs at $97-125.
-STS3250 = ServoSpec(
-    name="Feetech STS3250", stall_torque=50 * KGCM, no_load_speed=(math.pi / 3) / 0.133,
-    stall_current=4.2, no_load_current=0.28, v_rated=12.0, mass=0.0745, gear_ratio=345,
+# Hoverboard hub motor (6.5 in wheel) on hoverboard-firmware-hack-FOC, 36 V, current-limited (approx)
+HUB_MOTOR = MotorSpec(
+    name="Hoverboard hub motor 6.5in (approx)", stall_torque=12.0, no_load_speed=50.0,
+    stall_current=15.0, no_load_current=0.5, v_rated=36.0, supply="battery", mass=2.8,
+    armature=0.02, friction=0.15, damping=0.05, price_usd=0.0,     # comes with the used hoverboard
+    thermal_resistance=1.5, thermal_capacity=400.0, cutout_temp=90.0,
+)
+# Feetech STS3250-C002: 50 kg.cm peak, 0.133 s/60deg at 12 V, 4.2 A
+STS3250 = MotorSpec(
+    name="Feetech STS3250-C002", stall_torque=50 * KGCM, no_load_speed=(math.pi / 3) / 0.133,
+    stall_current=4.2, no_load_current=0.28, v_rated=12.0, supply="12v", mass=0.0745,
     armature=0.012, friction=0.06, damping=0.02, price_usd=74.0,
 )
-
-# Feetech STS3215 (12 V version): 30 kg.cm, ~0.222 s/60deg, ~2.7 A stall, 55 g, 1:345
-STS3215_12V = ServoSpec(
-    name="Feetech STS3215 (12V)", stall_torque=30 * KGCM, no_load_speed=(math.pi / 3) / 0.222,
-    stall_current=2.7, no_load_current=0.18, v_rated=12.0, mass=0.055, gear_ratio=345,
+# Feetech STS3215 12 V (Waveshare "ST3215 12V"): 30 kg.cm
+STS3215 = MotorSpec(
+    name="Feetech STS3215 12V", stall_torque=30 * KGCM, no_load_speed=(math.pi / 3) / 0.222,
+    stall_current=2.7, no_load_current=0.18, v_rated=12.0, supply="12v", mass=0.055,
     armature=0.008, friction=0.04, damping=0.015, price_usd=22.0,
 )
 
 
 @dataclass(frozen=True)
+class AxisSpec:
+    """A stepper-driven linear axis. The brain commands speed (a step rate), as on the real driver.
+    Steppers hold position while powered (holding current) and go slack when the pack dies."""
+    name: str
+    stroke: float            # m of travel
+    max_speed: float         # m/s
+    max_force: float         # N at the carriage
+    moving_power: float      # W
+    holding_power: float     # W
+    friction: float          # N, rails + belt
+    price_usd: float
+
+
+# NEMA17 + 2:1 belt reduction + GT2 20T pulley on a 1.6 m 2040 rail, constant-force spring counterbalance
+LIFT = AxisSpec("lift", stroke=1.30, max_speed=0.15, max_force=120.0, moving_power=10.0, holding_power=4.0,
+                friction=8.0, price_usd=150.0)
+# three-stage telescope on heavy-duty drawer slides, NEMA17 + GT2 belt
+ARM = AxisSpec("arm", stroke=0.54, max_speed=0.25, max_force=60.0, moving_power=8.0, holding_power=3.0,
+               friction=6.0, price_usd=60.0)
+
+
+@dataclass(frozen=True)
 class Joint:
     name: str
-    axis: tuple            # in the parent link frame
-    range_deg: tuple       # mechanical limits
-    servo: ServoSpec
+    axis: tuple
+    range: tuple             # degrees for hinges, metres for slides
+    motor: MotorSpec
+    slide: bool = False
+    gear: float = 1.0        # joint force = motor torque x gear (a rack and pinion of radius 1/gear)
+    torque_limit: float = 1.0   # the servo's torque-limit register, as a fraction of stall
+    stiffness_err: float = 0.15 # position mode: error (rad or m) at which the servo's loop hits full torque
 
 
-# Joint order == action order == encoder order. 20 servos.
-JOINTS: list[Joint] = []
-for side in ("l", "r"):
-    s = 1 if side == "l" else -1
-    JOINTS += [
-        Joint(f"hip_yaw_{side}",     (0, 0, 1), (-40, 40),                                 STS3215_12V),
-        Joint(f"hip_roll_{side}",    (1, 0, 0), (-25, 60) if s > 0 else (-60, 25),        STS3250),
-        Joint(f"hip_pitch_{side}",   (0, 1, 0), (-120, 45),                               STS3250),
-        Joint(f"knee_{side}",        (0, 1, 0), (0, 140),                                 STS3250),
-        Joint(f"ankle_pitch_{side}", (0, 1, 0), (-60, 60),                                STS3250),
-        Joint(f"ankle_roll_{side}",  (1, 0, 0), (-30, 30),                                STS3215_12V),
-    ]
-for side in ("l", "r"):
-    s = 1 if side == "l" else -1
-    JOINTS += [
-        Joint(f"shoulder_pitch_{side}", (0, 1, 0), (-180, 60),                            STS3215_12V),
-        Joint(f"shoulder_roll_{side}",  (1, 0, 0), (-10, 120) if s > 0 else (-120, 10),  STS3215_12V),
-        Joint(f"elbow_{side}",          (0, 1, 0), (-140, 0),                             STS3215_12V),
-    ]
-JOINTS += [
-    Joint("neck_yaw",   (0, 0, 1), (-90, 90), STS3215_12V),
-    Joint("neck_pitch", (0, 1, 0), (-40, 60), STS3215_12V),
+WRIST = [
+    Joint("wrist_yaw", (0, 0, 1), (-100, 280), STS3215),     # 0 = gripper heading out along the arm
+    Joint("wrist_pitch", (-1, 0, 0), (-60, 95), STS3250),    # 0 = gripper pointing down, 90 = pointing out
+    Joint("wrist_roll", (0, 0, 1), (-150, 150), STS3215),
+    # parallel jaws on a rack and pinion (20 mm pinion): each finger slides 0..55 mm, 0 = closed
+    Joint("gripper", (0, 1, 0), (0.0, 0.055), STS3250, slide=True, gear=50.0, torque_limit=0.25, stiffness_err=0.01),
 ]
-JOINT_NAMES = [j.name for j in JOINTS]
-N_JOINTS = len(JOINTS)
+HEAD = [
+    Joint("head_pan", (0, 0, 1), (-200, 100), STS3215),
+    Joint("head_tilt", (0, 1, 0), (-30, 85), STS3215),       # positive looks down
+]
+
+# Action order. 10 numbers in [-1, 1]: wheel duty x2, lift speed, arm speed, then the six bus servos.
+# Servos run in their own position mode by default (the servo's internal ~1 kHz loop; the brain sends a
+# target, -1..1 across the joint range). SERVO_MODE = "pwm" makes them raw duty cycles instead: purer,
+# but a 20 Hz brain driving PWM makes servos chatter and overheat, on hardware as in sim.
+WHEELS = ["wheel_l", "wheel_r"]
+AXES = ["lift", "arm"]
+SERVOS = WRIST + HEAD
+SERVO_NAMES = [j.name for j in SERVOS]
+ACTION_NAMES = WHEELS + AXES + SERVO_NAMES
+N_ACTIONS = len(ACTION_NAMES)
+DUTY_NAMES = WHEELS + SERVO_NAMES
+SERVO_MODE = "position"
+DUTY_MOTORS = [HUB_MOTOR, HUB_MOTOR] + [j.motor for j in SERVOS]
 
 
 # ----------------------------------------------------------------------------
-# body geometry (m) and link masses (kg, excluding the servos, which are added
-# where they sit). About 0.62 m tall, about 3.3 kg.
+# geometry (m, base frame: +x forward, +y left, z up) and masses (kg)
 # ----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Geometry:
-    hip_half_width: float = 0.050      # pelvis centre -> hip yaw axis (y)
-    hip_drop: float = 0.030            # pelvis centre -> hip pitch axis (z)
-    thigh: float = 0.130
-    shank: float = 0.130
-    ankle_to_sole: float = 0.035
-    foot_length: float = 0.120
-    foot_width: float = 0.055
-    foot_heel: float = 0.040           # ankle axis -> heel
-    torso_height: float = 0.170        # pelvis centre -> shoulder axis
-    torso_depth: float = 0.080
-    torso_width: float = 0.120
-    shoulder_half_width: float = 0.085
-    upper_arm: float = 0.100
-    forearm: float = 0.110
-    neck: float = 0.040
-    head_radius: float = 0.050
-
-    @property
-    def standing_pelvis_height(self) -> float:
-        return self.hip_drop + self.thigh + self.shank + self.ankle_to_sole
+    base_length: float = 0.50
+    base_width: float = 0.30           # chassis between the wheels
+    base_bottom: float = 0.050
+    base_top: float = 0.130
+    wheel_radius: float = 0.0825       # 6.5 in hub wheels
+    wheel_width: float = 0.055
+    wheel_track: float = 0.38          # centre to centre
+    caster_radius: float = 0.025
+    caster_x: float = 0.20
+    outrigger_radius: float = 0.020
+    outrigger_clearance: float = 0.015 # anti-tip wheels ride this far above the floor
+    outrigger_xy: tuple = (0.32, 0.32)  # wide enough that an 80 N shove at the mast top doesn't tip it (sim trials)
+    mast_x: float = -0.17
+    mast_y: float = 0.08
+    mast_top: float = 1.62
+    lift_low: float = 0.10             # telescope height above the floor at the bottom of travel
+    arm_x: float = -0.12               # telescope centre line (x)
+    arm_root_y: float = 0.18           # inner end of the telescope (left of the mast, so the retracted
+                                       # gripper sits beside the deck tote)
+    stage_length: float = 0.30
+    n_stages: int = 3
+    wrist_drop: float = 0.06           # wrist yaw axis -> wrist pitch axis
+    finger_length: float = 0.09
+    lidar_x: float = 0.23
+    lidar_z: float = 0.165
+    tote_x: tuple = (-0.06, 0.18)      # deck tote, inner extent
+    tote_y: tuple = (-0.13, 0.13)
+    tote_height: float = 0.18
+    dock_pad_z: float = 0.090          # charge pads on the rear bumper
+    dock_pad_y: float = 0.060
 
 
 GEOM = Geometry()
 
-# 3D-printed PETG/PLA brackets + fasteners per link (servo masses added separately)
-FRAME_MASS = {
-    "pelvis": 0.120, "torso": 0.260, "head": 0.090,
-    "hip_yaw_link": 0.020, "hip_roll_link": 0.030, "thigh": 0.060, "shank": 0.055,
-    "ankle_link": 0.015, "foot": 0.070,
-    "upper_arm_a": 0.015, "upper_arm": 0.035, "forearm": 0.045,
+MASS = {   # ballast: a steel plate under the deck, the cheapest anti-tip there is
+    "chassis": 2.5, "ballast": 12.0, "electronics": 0.40, "lidar": 0.11, "mast": 1.8, "carriage": 0.40,
+    "stage": 0.25, "wrist_bracket": 0.08, "palm": 0.10, "finger": 0.03, "head": 0.25, "tote": 0.30,
 }
 
 
 # ----------------------------------------------------------------------------
-# power: battery, electronics, dock
+# power and dock
 # ----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class BatterySpec:
-    """3S1P Li-ion pack (3 x 18650, e.g. Molicel P42A / Samsung 35E) with a BMS."""
-    cells_series: int = 3
-    capacity_ah: float = 3.5
-    r_internal: float = 0.15           # ohm, whole pack incl. BMS and wiring
-    cell_cutoff_v: float = 3.0         # BMS low-voltage disconnect (under load)
+    """10S2P Li-ion pack (36 V, hoverboard format, new not salvaged) with BMS."""
+    cells_series: int = 10
+    capacity_ah: float = 5.0
+    r_internal: float = 0.25
+    cell_cutoff_v: float = 3.0
     cell_full_v: float = 4.2
-    mass: float = 0.165
-    price_usd: float = 35.0
-    # open-circuit voltage per cell vs state of charge (typical NMC 18650)
+    mass: float = 1.10
+    price_usd: float = 70.0     # est
     ocv_soc: tuple = (0.00, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1.00)
     ocv_v: tuple = (3.00, 3.30, 3.45, 3.56, 3.63, 3.70, 3.76, 3.84, 3.93, 4.02, 4.10, 4.20)
 
     @property
+    def nominal_v(self) -> float:
+        return 3.65 * self.cells_series
+
+    @property
     def nominal_wh(self) -> float:
-        return self.capacity_ah * 3.65 * self.cells_series
+        return self.capacity_ah * self.nominal_v
 
 
 @dataclass(frozen=True)
 class ElectronicsSpec:
-    """Always-on load: brain computer, IMU, servo logic boards, IR receivers."""
+    """Always-on load. The Pi is the robot's spinal cord; the brain runs on a desktop GPU over Wi-Fi."""
     computer: str = "Raspberry Pi 5 (8 GB)"
-    computer_w: float = 5.0
-    servo_logic_w: float = 0.10        # per servo, idle
+    computer_w: float = 6.0
+    hub_board_w: float = 1.5           # hoverboard mainboard idle
+    lidar_w: float = 1.2
+    cameras_w: float = 1.4             # head + palm USB cameras
     sensors_w: float = 0.4
-    buck_efficiency: float = 0.90      # 12 V -> 5 V for the computer
+    servo_logic_w: float = 0.10        # per bus servo
+    converter_efficiency: float = 0.90 # 36 V -> 12 V / 5 V bucks
 
-    def idle_power(self, n_servos: int) -> float:
-        return (self.computer_w + self.sensors_w) / self.buck_efficiency + n_servos * self.servo_logic_w
+    def idle_power(self) -> float:
+        five = self.computer_w + self.lidar_w + self.cameras_w + self.sensors_w
+        return five / self.converter_efficiency + self.hub_board_w + len(SERVOS) * self.servo_logic_w
 
 
 @dataclass(frozen=True)
 class DockSpec:
-    """Floor charging pad: two copper plates, one per foot, and an IR beacon.
-
-    The robot charges by standing with one foot on each plate. The soles carry
-    copper pads wired through an ideal-diode bridge, so either foot can stand on
-    either plate. The dock only energises the plates after it measures the
-    robot's sense resistor across them (no live metal otherwise), then runs a
-    CC/CV charge.
-    """
-    base_size: tuple = (0.34, 0.36, 0.008)   # x (depth), y (width), z (thickness), m
-    plate_size: tuple = (0.24, 0.14)         # each plate, x, y
-    plate_gap: float = 0.030                 # insulating strip between plates
-    beacon_height: float = 0.30              # IR LED post at the back of the dock
-    charge_current: float = 2.0              # A, CC phase
-    charge_voltage: float = 12.6             # V, CV phase
+    """Wall dock: backboard with two spring-loaded contacts and an IR beacon. The robot reverses onto it."""
+    board_size: tuple = (0.10, 0.30, 0.24)   # a 10 cm deep stand: the rear outriggers pass either side of it
+    contact_size: tuple = (0.04, 0.03)
+    contact_y: float = 0.065
+    spring_travel: float = 0.005
+    beacon_z: float = 0.20
+    charge_current: float = 2.0        # A, a standard 42 V 2 A e-bike/hoverboard charger
+    charge_voltage: float = 42.0
     charge_efficiency: float = 0.93
-    contact_settle_s: float = 0.5            # feet must rest this long before power flows
-    ir_wavelength_nm: int = 940
-    ir_beacon_power: float = 1.0             # arbitrary units at 1 m on axis
+    contact_settle_s: float = 0.5
+    ir_beacon_power: float = 1.0
+    price_usd: float = 50.0
 
 
 BATTERY = BatterySpec()
@@ -217,56 +261,110 @@ DOCK = DockSpec()
 
 
 # ----------------------------------------------------------------------------
-# sensors (what the brain gets; each one exists on the physical robot)
+# sensors
 # ----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class SensorSpec:
-    imu: str = "BNO085 (accel + gyro + fused orientation), in the torso"
-    joint: str = "servo 12-bit magnetic encoder, speed, load, temperature (bus readback)"
-    feet: str = "4 FSR402 per sole (heel/toe x inner/outer)"
-    power: str = "INA226 on the battery line: pack voltage and current"
-    charge: str = "dock-present / charging flag from the charge controller"
-    ir: str = "4 x 940 nm photodiodes on the head (front, left, back, right), amplitude of the 38 kHz beacon"
-    camera: str = "Pi Camera Module 3 Wide on the head (optional in sim; costs render time)"
-
-    imu_gyro_noise: float = 0.01       # rad/s
-    imu_acc_noise: float = 0.05        # m/s^2
-    imu_grav_noise: float = 0.01
-    enc_noise: float = 0.0015          # rad (12-bit = 0.0015 rad/count)
-    vel_noise: float = 0.05            # rad/s
-    fsr_noise: float = 0.3             # N
-    v_noise: float = 0.02              # V
-    i_noise: float = 0.02              # A
+class LidarSpec:
+    model: str = "Slamtec RPLIDAR C1"
+    range: tuple = (0.05, 12.0)
+    rays: int = 180
+    fov_deg: float = 240.0          # the deck tote and mast shade the rear
+    noise: float = 0.01
+    dropout: float = 0.02
+    price_usd: float = 80.0
 
 
-SENSORS = SensorSpec()
+@dataclass(frozen=True)
+class CameraSpec:
+    model: str
+    fovy: float
+    depth_range: tuple | None = None
+    depth_noise: float = 0.0
+    price_usd: float = 0.0
 
-CONTROL_HZ = 50        # brain rate (bus read + write of 20 servos at 1 Mbaud fits in < 10 ms)
+
+HEAD_CAM = CameraSpec("USB RGB camera, wide (head)", fovy=70.0, price_usd=20.0)
+PALM_CAM = CameraSpec("USB RGB camera, wide (palm)", fovy=80.0, price_usd=20.0)
+DEPTH_UPGRADE = CameraSpec("Orbbec Gemini 2 (optional, replaces the head camera)", fovy=66.0,
+                           depth_range=(0.15, 10.0), depth_noise=0.01, price_usd=267.0)
+LIDAR = LidarSpec()
+
+
+@dataclass(frozen=True)
+class SensorNoise:
+    enc: float = 0.0015
+    vel: float = 0.05
+    axis_pos: float = 0.0005    # stepper step counting (m)
+    gyro: float = 0.01
+    acc: float = 0.05
+    grav: float = 0.01
+    odom_drift: float = 0.02
+    v: float = 0.05
+    i: float = 0.05
+
+
+NOISE = SensorNoise()
+
+CONTROL_HZ = 20
 PHYSICS_HZ = 500
 
 
+# ----------------------------------------------------------------------------
+# durability: parts that break, and what breaks them
+# ----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PartSpec:
+    """A component that fails after enough hard knocks. ``impulse_limit`` is the
+    accumulated excess impulse (N s above ``force_threshold``) it survives."""
+    name: str
+    force_threshold: float
+    impulse_limit: float
+    effect: str
+
+
+PARTS = [
+    PartSpec("wrist", 60.0, 6.0, "wrist and gripper servos stop responding (stripped gears)"),
+    PartSpec("palm_cam", 40.0, 2.0, "palm camera goes black"),
+    PartSpec("head", 40.0, 3.0, "head servos and head camera stop"),
+    PartSpec("lidar", 50.0, 3.0, "lidar returns nothing"),
+    PartSpec("mast", 250.0, 40.0, "mast bent: lift jams"),
+]
+
+
 def bill_of_materials() -> list[tuple[str, int, float]]:
-    """(item, qty, unit price USD), approximate 2026 hobby prices."""
-    n50 = sum(j.servo is STS3250 for j in JOINTS)
-    n30 = sum(j.servo is STS3215_12V for j in JOINTS)
+    """(item, qty, unit price USD). About $1,190 robot + dock, plus the house kit."""
     return [
-        (STS3250.name + " (hips pitch/roll, knees, ankle pitch)", n50, STS3250.price_usd),
-        (STS3215_12V.name + " (hip yaw, ankle roll, arms, neck)", n30, STS3215_12V.price_usd),
-        ("Feetech URT-1 / Waveshare bus servo adapter (USB-TTL)", 1, 12.0),
-        (ELECTRONICS.computer, 1, 80.0),
-        ("Pi Camera Module 3 Wide", 1, 35.0),
-        ("BNO085 IMU breakout", 1, 25.0),
-        ("FSR402 force sensors", 8, 6.0),
-        ("ADS1115 ADC (FSRs)", 2, 6.0),
-        ("INA226 current/voltage monitor", 1, 6.0),
-        ("940 nm photodiodes (BPW34-class) + op-amp, beacon strength per side", 4, 4.0),
-        ("3S 18650 pack with BMS (3.5 Ah)", 1, BATTERY.price_usd),
-        ("12 V -> 5 V 5 A buck converter", 1, 10.0),
-        ("Ideal-diode bridge (LT4320 board) for foot contacts", 1, 12.0),
-        ("Copper tape / sole contact pads, wiring, connectors", 1, 25.0),
-        ("PETG filament for brackets (~1 kg)", 1, 22.0),
-        ("Fasteners, bearings, servo horns", 1, 30.0),
-        ("Dock: 3S CC/CV charger board + 12.6 V supply", 1, 25.0),
-        ("Dock: copper plates, IR LED + 38 kHz driver, MCU (presence check)", 1, 20.0),
+        ("Used hoverboard (2 hub motors, mainboard; reflash with hoverboard-firmware-hack-FOC)", 1, 50.0),
+        ("ST-Link programmer for the reflash", 1, 10.0),
+        ("New 36 V 10S2P battery with BMS (don't reuse the hoverboard's)", 1, BATTERY.price_usd),
+        ("Base: plywood/aluminium chassis, 2 casters, 4 outrigger arms + wheels, foam bumper", 1, 85.0),
+        ("Steel ballast plate, 12 kg", 1, 35.0),
+        ("Deck tote (plastic bin) + mounts", 1, 10.0),
+        ("Lift: 1.6 m 2040 rail, V-wheel carriage, NEMA17, belt, 2:1 pulleys, constant-force spring", 1, LIFT.price_usd),
+        ("Telescoping arm: 3 heavy-duty drawer slides, NEMA17, belt", 1, ARM.price_usd),
+        ("Stepper drivers (36 V capable, e.g. DM542-class)", 2, 12.0),
+        (STS3250.name + " (wrist pitch, gripper)", 2, STS3250.price_usd),
+        (STS3215.name + " (wrist yaw, wrist roll, head pan, head tilt)", 4, STS3215.price_usd),
+        ("Bus servo driver board", 1, 12.0),
+        ("Printed parallel-jaw gripper (rack and pinion) with TPU finger pads", 1, 10.0),
+        ("Raspberry Pi 5 8 GB + cooler + microSD", 1, 95.0),
+        (LIDAR.model, 1, LIDAR.price_usd),
+        (HEAD_CAM.model, 1, HEAD_CAM.price_usd),
+        (PALM_CAM.model, 1, PALM_CAM.price_usd),
+        ("BNO085 IMU", 1, 25.0),
+        ("IR cliff sensors x4 + bumper switches", 1, 17.0),
+        ("INA226 battery monitor", 1, 6.0),
+        ("940 nm photodiodes + op-amp (dock beacon)", 4, 4.0),
+        ("36 V -> 12 V 10 A and 36 V -> 5 V 5 A converters", 1, 25.0),
+        ("E-stop, fuses, wiring, connectors", 1, 40.0),
+        ("PETG filament + fasteners", 1, 40.0),
+        ("Dock: 42 V 2 A charger, spring contacts, IR LED, MCU, board", 1, DOCK.price_usd),
     ]
+
+
+HOUSE_KIT = [
+    ("SwitchBot-style button pushers (washer + dryer start)", 2, 25.0),
+    ("Printed AprilTag markers (dock, door, washer, dryer, basket, trash can, pod bucket)", 1, 0.0),
+]

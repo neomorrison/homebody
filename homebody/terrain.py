@@ -9,13 +9,13 @@ lived-in home (1) and beyond (2+ for robustness training):
 * **Surfaces.** The floor is tile, laminate, hardwood, concrete or carpet, and
   patches lie on it: rugs, carpet offcuts, rubber mats, wet spots and dusty
   spots. Each has its own sole-to-surface friction and softness.
-* **Obstacles you can step on.** Door sills (8 and 16 mm), cables, and loose
-  clutter (a toy block, a ball, a book) that slides or rolls when kicked.
+* **Obstacles to drive over.** Door sills (8 and 16 mm) and cables. (Loose
+  objects are in ``items``: they are what the robot tidies.)
 
-Friction values are coefficients between a rubber sole and the surface, the
+Friction values are coefficients between rubber (tyres) and the surface, the
 number the contact actually uses: every world surface has a higher contact
-priority than the robot, so the surface decides (``robot_xml`` keeps robot
-parts at priority 0).
+priority than the robot's wheels and body, so the surface decides
+(``robot_xml`` keeps those at priority 0; casters and gripper pads override).
 """
 from __future__ import annotations
 
@@ -42,15 +42,9 @@ PATCH_TYPES = ["rug", "rug", "carpet", "rubber_mat", "wet", "dusty"]
 NOMINAL = dict(mu=0.6, soft=0.02)
 
 # patch half-sizes (x, y, thickness/2); fixed at compile, placed per episode
-PATCH_SIZES = [(0.9, 0.6, 0.003), (1.1, 0.7, 0.004), (0.45, 0.3, 0.003), (0.3, 0.22, 0.0005), (0.5, 0.35, 0.0005)]
+PATCH_SIZES = [(0.9, 0.6, 0.003), (0.7, 0.5, 0.004), (0.3, 0.22, 0.0005), (0.4, 0.3, 0.0005)]
 SILL_HEIGHTS = [0.004, 0.008]          # half-heights: 8 mm and 16 mm sills
 N_CABLES = 2
-CLUTTER = [  # name, geom xml, mass
-    ("block", 'type="box" size="0.02 0.02 0.02"', 0.03),
-    ("ball", 'type="sphere" size="0.03"', 0.05),
-    ("book", 'type="box" size="0.1 0.07 0.012"', 0.3),
-]
-
 HF_RES = 0.04          # m per heightfield cell
 HF_BASE = 0.05         # floor at z=0 sits this far above the heightfield's zero
 HF_TOP = 0.10          # max representable height above the base
@@ -98,16 +92,6 @@ def world_xml() -> str:
     return "\n    ".join(out)
 
 
-def clutter_xml() -> str:
-    """Loose objects with free joints. Goes after the robot so the robot's root stays qpos[0:7]."""
-    surf = 'priority="2" condim="3" friction="0.5 0.01 0.001"'
-    return "\n    ".join(
-        f'<body name="clutter_{n}" pos="{30 + 0.3 * k} 0 -0.8"><freejoint name="clutter_{n}"/>'
-        f'<geom name="clutter_{n}" {g} mass="{m}" {surf} rgba="0.2 0.5 0.8 1"/></body>'
-        for k, (n, g, m) in enumerate(CLUTTER)
-    )
-
-
 def _smooth_noise(rng, nrow, ncol, sigma_cells):
     """Gaussian-filtered white noise with unit std (FFT, periodic; fine for a floor)."""
     w = rng.normal(size=(nrow, ncol))
@@ -132,8 +116,6 @@ class Terrain:
         self.patch = [(name(B, f"patch_{k}"), name(G, f"patch_{k}")) for k in range(len(PATCH_SIZES))]
         self.sill = [name(B, f"sill_{k}") for k in range(len(SILL_HEIGHTS))]
         self.cable = [name(B, f"cable_{k}") for k in range(N_CABLES)]
-        self.clutter = [(m.jnt_qposadr[name(J, f"clutter_{n}")], m.jnt_dofadr[name(J, f"clutter_{n}")])
-                        for n, _, _ in CLUTTER]
         self.heights = np.zeros((self.nrow, self.ncol))
         self.version = 0
         xs = np.linspace(-self.rx, self.rx, self.ncol)
@@ -207,22 +189,33 @@ class Terrain:
         if rgba is not None:
             m.geom_rgba[g] = rgba
 
-    def randomize(self, rng, level, taken, set_body, sole_scale=1.0):
-        """Surfaces, patches, sills, cables and clutter. ``taken`` = [(xy, radius)] to keep clear
-        (the dock, furniture). Returns a TerrainState summary. Call after generate_heights() and
-        before upload(): patches level the floor under themselves."""
+    def set_surface(self, g, kind, rng, level, tyre_scale=1.0, recolor=True):
+        """Give geom ``g`` a random instance of surface ``kind``. Returns its friction."""
+        mu, soft, rgba = self._surface(rng, kind, level)
+        self._set_geom_surface(g, mu * tyre_scale, soft, rgba if recolor else None)
+        return mu * tyre_scale
+
+    def randomize(self, rng, level, set_body, is_free, sill_spots=(), patch_free=None,
+                  floor_choices=("tile", "laminate", "hardwood"), tyre_scale=1.0):
+        """Floor surface, loose patches (rugs, mats, wet and dusty spots), door sills and cables.
+
+        ``is_free(xy, r)`` says whether a circle of floor is open; ``patch_free`` the same for
+        rugs (defaults to ``is_free``). Sills go in ``sill_spots`` [(xy, yaw)] (doorways).
+        Returns a TerrainState. Call after generate_heights() and before upload(): patches level
+        the floor under themselves."""
         m = self.m
         X, Y = self.room[0] / 2, self.room[1] / 2
-        floor = "tile" if level <= 0 else str(rng.choice(FLOOR_TYPES))
+        patch_free = patch_free or is_free
+        floor = "tile" if level <= 0 else str(rng.choice(floor_choices))
         mu, soft, rgba = self._surface(rng, floor, level)
-        self._set_geom_surface(self.floor_geom, mu * sole_scale, soft)
+        self._set_geom_surface(self.floor_geom, mu * tyre_scale, soft)
         m.mat_rgba[self.floor_mat] = rgba
-        state = TerrainState(level, floor, mu * sole_scale, [], self.tilt, 1000 * self.bump_rms)
+        state = TerrainState(level, floor, mu * tyre_scale, [], self.tilt, 1000 * self.bump_rms)
 
-        def free_spot(r, clear=0.15):
-            for _ in range(40):
+        def free_spot(r, ok):
+            for _ in range(60):
                 p = np.array([rng.uniform(-X + r, X - r), rng.uniform(-Y + r, Y - r)])
-                if all(np.linalg.norm(p - q) > rq + clear for q, rq in taken):
+                if ok(p, r):
                     return p
             return None
 
@@ -231,39 +224,30 @@ class Terrain:
 
         for b, g in self.patch:
             hx, hy, hz = m.geom_size[g]
-            p = free_spot(0.5 * max(hx, hy)) if rng.uniform() < level else None
+            p = free_spot(0.6 * max(hx, hy), patch_free) if rng.uniform() < level else None
             if p is None:
                 hide(b)
                 continue
             kind = str(rng.choice(PATCH_TYPES))
             pmu, psoft, prgba = self._surface(rng, kind, level)
-            self._set_geom_surface(g, pmu * sole_scale, psoft, prgba)
+            self._set_geom_surface(g, pmu * tyre_scale, psoft, prgba)
             yaw = rng.uniform(0, math.pi)
             set_body(b, p, yaw)
             m.body_pos[b][2] = self.flatten(p[0], p[1], yaw, hx, hy, pad=0.0)   # a rug lies flat
-            state.patches.append((kind, round(pmu * sole_scale, 2)))
-        for b in self.sill + self.cable:
-            p = free_spot(0.45) if rng.uniform() < 0.6 * level else None
+            state.patches.append((kind, round(pmu * tyre_scale, 2)))
+        spots = list(sill_spots)
+        for b in self.sill:
+            if spots and rng.uniform() < 0.7 * level:
+                xy, yaw = spots.pop(int(rng.integers(len(spots))))
+                set_body(b, np.asarray(xy), yaw)
+                m.body_pos[b][2] = self.height_at(*xy) - 0.001
+            else:
+                hide(b)
+        for b in self.cable:
+            p = free_spot(0.45, is_free) if rng.uniform() < 0.5 * level else None
             if p is None:
                 hide(b)
                 continue
             set_body(b, p, rng.uniform(0, math.pi))
             m.body_pos[b][2] = self.height_at(*p) - 0.001
         return state
-
-    def place_clutter(self, rng, level, taken, qpos, qvel):
-        X, Y = self.room[0] / 2, self.room[1] / 2
-        for k, (qa, va) in enumerate(self.clutter):
-            qvel[va:va + 6] = 0
-            p = None
-            if rng.uniform() < level:
-                for _ in range(40):
-                    c = np.array([rng.uniform(-X + 0.2, X - 0.2), rng.uniform(-Y + 0.2, Y - 0.2)])
-                    if all(np.linalg.norm(c - q) > rq + 0.1 for q, rq in taken):
-                        p = c
-                        break
-            if p is None:
-                qpos[qa:qa + 7] = [30 - 0.6 + 0.3 * k, 0, -0.85, 1, 0, 0, 0]
-                continue
-            yaw = rng.uniform(-math.pi, math.pi)
-            qpos[qa:qa + 7] = [p[0], p[1], self.height_at(*p) + 0.04, math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)]

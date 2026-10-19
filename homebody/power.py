@@ -1,8 +1,8 @@
-"""Battery, servo electrical/thermal model and the dock's charger.
+"""Battery, motor electrical/thermal model and the dock's charger.
 
 The motors pull current from the pack, the pack's voltage sags under load and
 as it empties, and lower voltage means weaker muscles. Below the BMS cutoff the
-whole robot goes limp. The only way to get energy back is to stand on the dock.
+whole robot goes limp. The only way to get energy back is to back into the dock.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class Battery:
 
 
 class Charger:
-    """CC/CV charger in the dock. Power flows only after the feet have settled."""
+    """CC/CV charger in the dock. Power flows only after the contacts have settled."""
 
     def __init__(self, d: S.DockSpec = S.DOCK, b: S.BatterySpec = S.BATTERY):
         self.d, self.b = d, b
@@ -69,20 +69,20 @@ class Charger:
         return float(np.clip(headroom, 0.0, self.d.charge_current)) * self.d.charge_efficiency
 
 
-class ServoBank:
-    """Electrical and thermal state of all servos (vectorised over joints)."""
+class MotorBank:
+    """Electrical and thermal state of all PWM-driven motors (vectorised)."""
 
-    def __init__(self, joints=S.JOINTS, ambient: float = 25.0):
-        self.kt = np.array([j.servo.torque_constant for j in joints])
-        self.rw = np.array([j.servo.winding_resistance for j in joints])
-        self.i0 = np.array([j.servo.no_load_current for j in joints])
-        self.wnl = np.array([j.servo.no_load_speed for j in joints])
-        self.rth = np.array([j.servo.thermal_resistance for j in joints])
-        self.cth = np.array([j.servo.thermal_capacity for j in joints])
-        self.cut = np.array([j.servo.cutout_temp for j in joints])
+    def __init__(self, motors=S.DUTY_MOTORS, ambient: float = 25.0):
+        self.kt = np.array([m.torque_constant for m in motors])
+        self.rw = np.array([m.winding_resistance for m in motors])
+        self.i0 = np.array([m.no_load_current for m in motors])
+        self.wnl = np.array([m.no_load_speed for m in motors])
+        self.rth = np.array([m.thermal_resistance for m in motors])
+        self.cth = np.array([m.thermal_capacity for m in motors])
+        self.cut = np.array([m.cutout_temp for m in motors])
         self.ambient = ambient
-        self.temp = np.full(len(joints), ambient)
-        self.tripped = np.zeros(len(joints), bool)
+        self.temp = np.full(len(motors), ambient)
+        self.tripped = np.zeros(len(motors), bool)
 
     def reset(self, ambient: float | None = None):
         if ambient is not None:
@@ -91,7 +91,7 @@ class ServoBank:
         self.tripped[:] = False
 
     def step(self, torque, duty, omega, dt):
-        """Returns battery current drawn by the motors (A)."""
+        """Returns each motor's supply-side current (A), at that motor's supply voltage."""
         i_motor = torque / self.kt                                   # winding current, signed
         i_spin = self.i0 * np.minimum(np.abs(omega) / self.wnl, 1.0) * (np.abs(duty) > 0.01)
         # H-bridge: battery current ~= duty * motor current; braking regen is not recovered
@@ -99,4 +99,4 @@ class ServoBank:
         heat = i_motor ** 2 * self.rw
         self.temp += dt * (heat - (self.temp - self.ambient) / self.rth) / self.cth
         self.tripped = np.where(self.tripped, self.temp > self.cut - 10.0, self.temp > self.cut)
-        return float(i_batt.sum())
+        return i_batt
