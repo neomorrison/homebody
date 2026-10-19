@@ -33,7 +33,7 @@ design are in [DESIGN.md](DESIGN.md).
 ## The world
 
 A 6 x 5 m room with walls, six pieces of furniture and the dock against a wall. The layout, the
-starting position, the initial charge, masses (±10%), sole rubber condition and servo strength
+starting position, the initial charge, masses (Â±10%), sole rubber condition and servo strength
 (-15%/+5%) are reshuffled every episode so that a brain cannot memorise one room or one body.
 
 The floor is a real home's floor, set by `terrain_level` (0 lab floor, 1 ordinary home, 2+ harder):

@@ -83,6 +83,10 @@ The head camera can be added as a second observation (`EnvConfig(camera=(64, 64)
   gearbox. Bench identification will narrow this.
 * Hip, shoulder and torso parts do not collide with each other (the real brackets are designed not to);
   legs, feet and hands do collide with each other.
+* The floor heightfield has 4 cm cells: it captures warps, slopes and steps but not grout lines or
+  carpet pile; those come in only as friction and softness.
+* Rugs are rigid and fixed. Real rugs slide on hard floors and their edges curl.
+* Friction is Coulomb with one coefficient per surface; real rubber on carpet depends on pressure and speed.
 * IR beacon is an idealised cos^2 / r^2 with occlusion; real photodiodes see reflections and sunlight.
 * Contacts are MuJoCo soft contacts; the copper pads are assumed to conduct whenever they touch.
 
@@ -94,7 +98,8 @@ The body and world are done. How the brain should learn is a choice:
    discover walking from random twitches. Useful as the final test, not the curriculum.
 2. **Developmental curriculum** (recommended): stage the same brain through the order a child learns
    (hold posture, get up, stand, step, walk to a visible beacon, dock), each stage with a short-lived
-   battery (`capacity_scale`), then remove the shaping and keep only survival. GPU-parallel training
+   battery (`capacity_scale`) and a floor that gets harder as it improves (`terrain_level` 0 to 1, then
+   past 1 so a real home feels easy), then remove the shaping and keep only survival. GPU-parallel training
    (MJX on the RTX 3080) would make this hours, not days.
 3. **Two-level brain**, like malecns-test: a learned motor cortex (muscles -> walking/turning skills)
    under a learned or evolved drive system (hunger = low battery). Faster, but it reintroduces
