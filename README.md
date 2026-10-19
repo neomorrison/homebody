@@ -1,6 +1,6 @@
 # homebody
 
-A small humanoid robot you can build for about $1,040, and a simulated home it has to survive in.
+A small humanoid robot you can build for about $1,270, and a simulated home it has to survive in.
 
 There are no "walk", "sleep" or "charge" commands. The brain gets only what the robot's own sensors
 report, and its only outputs are 20 muscle activations: one PWM duty cycle per servo, the same number

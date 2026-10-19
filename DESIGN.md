@@ -24,11 +24,11 @@
 
 Hip axes intersect at one point; thigh and shank 130 mm; sole 120 x 55 mm. Joint ranges are in `spec.JOINTS`.
 
-## Parts (about $1,040)
+## Parts (about $1,270)
 
 | Part | Qty | Each | Total |
 |---|---|---|---|
-| Feetech STS3250, 12 V, 4.9 N m (hip pitch/roll, knees, ankle pitch) | 8 | $45 | $360 |
+| Feetech STS3250-C002, 12 V, 4.9 N m (hip pitch/roll, knees, ankle pitch) | 8 | $74 | $592 |
 | Feetech STS3215, 12 V, 2.9 N m (hip yaw, ankle roll, arms, neck) | 12 | $22 | $264 |
 | Bus servo USB adapter (Feetech URT-1 or Waveshare) | 1 | $12 | $12 |
 | Raspberry Pi 5 (8 GB) | 1 | $80 | $80 |

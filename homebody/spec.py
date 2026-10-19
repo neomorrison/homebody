@@ -62,11 +62,12 @@ class ServoSpec:
 
 KGCM = 9.80665 / 100.0   # kg.cm -> N m
 
-# Feetech STS3250: 12 V, 50 kg.cm peak, 0.133 s/60deg, 4.2 A stall, 74.5 g, 1:345
+# Feetech STS3250-C002: 12 V, 50 kg.cm peak (16 kg.cm rated), 0.133 s/60deg, 4.2 A stall, 74.5 g, 1:345.
+# Buy the C002 SKU: the C001 is listed with different specs at $97-125.
 STS3250 = ServoSpec(
     name="Feetech STS3250", stall_torque=50 * KGCM, no_load_speed=(math.pi / 3) / 0.133,
     stall_current=4.2, no_load_current=0.28, v_rated=12.0, mass=0.0745, gear_ratio=345,
-    armature=0.012, friction=0.06, damping=0.02, price_usd=45.0,
+    armature=0.012, friction=0.06, damping=0.02, price_usd=74.0,
 )
 
 # Feetech STS3215 (12 V version): 30 kg.cm, ~0.222 s/60deg, ~2.7 A stall, 55 g, 1:345
