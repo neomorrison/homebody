@@ -1,0 +1,8 @@
+mujoco>=3.3
+gymnasium>=1.0
+numpy
+imageio
+imageio-ffmpeg
+pillow
+# hardware only
+# pyserial
