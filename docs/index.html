@@ -44,11 +44,10 @@ footer{margin-top:56px;color:var(--mute);font-size:13px}
 <body><main>
 <h1>homebody</h1>
 <p class="lede">A house robot you can build for about $1,196, trying real chores in a simulated copy of
-its owner's apartment. These are scripted attempts, recorded straight from the physics sim. The ones marked
-"Not yet" are what the learned brain has to fix.</p>
+its owner's apartment. These are scripted attempts, recorded straight from the physics sim: the body can do each of these. Next, a learned brain has to do them on its own, from its cameras.</p>
 <div class="stats">
-  <div class="stat"><b>7 of 9</b><span>tasks worked</span></div>
-  <div class="stat"><b>$1,196</b><span>parts, plus a $50 house kit</span></div>
+  <div class="stat"><b>10 of 10</b><span>tasks worked</span></div>
+  <div class="stat"><b>$1,196</b><span>parts, plus a $90 house kit</span></div>
   <div class="stat"><b>1.82 m</b><span>mast, reaches the dryer</span></div>
   <div class="stat"><b>10</b><span>motor commands, 20 times a second</span></div>
 </div>
@@ -68,9 +67,18 @@ its owner's apartment. These are scripted attempts, recorded straight from the p
 <article class="task">
   <video src="videos/pick_can.mp4" poster="posters/pick_can.jpg" controls muted playsinline preload="none"></video>
   <div class="body">
-    <div class="row"><h3>Pick up a can</h3>
+    <div class="row"><h3>Pick up an empty can</h3>
       <span class="badge ok">Worked</span></div>
     <p class="note">The can ended up in the tote.</p>
+    
+  </div>
+</article>
+<article class="task">
+  <video src="videos/full_can.mp4" poster="posters/full_can.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Don&#x27;t spill the drink</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">Weighed 190 g (an empty can is 15 g), so it kept the can upright and carried it off without spilling.</p>
     
   </div>
 </article>
@@ -87,18 +95,18 @@ its owner's apartment. These are scripted attempts, recorded straight from the p
   <video src="videos/pick_sock.mp4" poster="posters/pick_sock.jpg" controls muted playsinline preload="none"></video>
   <div class="body">
     <div class="row"><h3>Pick up a sock</h3>
-      <span class="badge bad">Not yet</span></div>
-    <p class="note">The sock was not picked up (it ended up on the floor).</p>
-    <p class="why">Cloth is floppy: the scripted grasp closes on the patches and slips. Pinching fabric is the first thing the demonstrations will teach.</p>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">The sock ended up in the tote.</p>
+    
   </div>
 </article>
 <article class="task">
   <video src="videos/pick_paper_bag.mp4" poster="posters/pick_paper_bag.jpg" controls muted playsinline preload="none"></video>
   <div class="body">
-    <div class="row"><h3>Pick up a paper bag</h3>
-      <span class="badge bad">Not yet</span></div>
-    <p class="note">The paper bag was not picked up (it ended up on the floor).</p>
-    <p class="why">A paper bag needs a pinch on its rim, not a squeeze across it. This grasp gets its own demonstrations too.</p>
+    <div class="row"><h3>Carry a paper bag</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">Pinched the rim, lifted the bag and carried it 1 m without dropping it.</p>
+    
   </div>
 </article>
 <article class="task">
@@ -133,7 +141,7 @@ its owner's apartment. These are scripted attempts, recorded straight from the p
   <div class="body">
     <div class="row"><h3>Take a bump</h3>
       <span class="badge ok">Worked</span></div>
-    <p class="note">Rode out the 80 N bump; the 200 N shove tipped it over. A tipped robot stops its motors and calls for help.</p>
+    <p class="note">Rode out the 80 N bump; the 200 N shove did not tip it. A tipped robot stops its motors and calls for help.</p>
     
   </div>
 </article>
@@ -194,9 +202,10 @@ brain from memorising one exact picture of the room.</p>
 
 <h2>What comes next</h2>
 <ul class="plain">
-  <li>Teleoperated demonstrations of the grasps that fail here (cloth, paper bag rims, the takeout bag handle), then imitation learning on them.</li>
+  <li>Teleoperated demonstrations of each chore, then imitation learning, so the robot finds things with its cameras instead of being told where they are.</li>
+  <li>Grasps still missing: the cardboard box (0.6 kg hanging off one wall twists out of the pinch; grab a corner or flatten it), the takeout bag's handle, shirts and jeans.</li>
   <li>Reinforcement learning for driving, docking from across the apartment and recovering from bumps.</li>
-  <li>Longer chores: loading the washer, moving laundry to the dryer, putting the iron and its cord away.</li>
+  <li>Longer chores: loading the washer, moving laundry to the dryer, putting the iron and its cord away, and vacuuming (with a trigger lock, a smart plug and a cord reel, so nothing has to be plugged in by hand).</li>
 </ul>
 
 <footer>Code, specs and the sim: <a href="https://github.com/neomorrison/homebody">github.com/neomorrison/homebody</a>.

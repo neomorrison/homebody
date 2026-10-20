@@ -15,7 +15,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 DOCS = os.path.join(ROOT, "docs")
 REPO = "https://github.com/neomorrison/homebody"
 
-ORDER = ["drive", "pick_can", "pick_sneaker", "pick_sock", "pick_paper_bag", "door", "dryer", "dock", "shove"]
+ORDER = ["drive", "pick_can", "full_can", "pick_sneaker", "pick_sock", "pick_paper_bag", "door", "dryer", "dock", "shove"]
 
 WHY_FAIL = {
     "pick_sock": "Cloth is floppy: the scripted grasp closes on the patches and slips. "
@@ -83,6 +83,8 @@ def main():
     tasks = json.load(open(os.path.join(DOCS, "tasks.json"), encoding="utf-8"))
     keys = [k for k in ORDER if k in tasks] + [k for k in tasks if k not in ORDER]
     n_ok = sum(tasks[k]["success"] for k in keys)
+    lede_tail = (". The ones marked \"Not yet\" are what the learned brain has to fix." if n_ok < len(keys) else
+                 ": the body can do each of these. Next, a learned brain has to do them on its own, from its cameras.")
     bom = sum(q * p for _, q, p in S.bill_of_materials())
     kit = sum(q * p for _, q, p in S.HOUSE_KIT)
     bom_rows = "\n".join(f'<tr><td>{html.escape(name)}{f" x{q}" if q > 1 else ""}</td><td class="num">${q * p:,.0f}</td></tr>'
@@ -95,8 +97,7 @@ def main():
 <body><main>
 <h1>homebody</h1>
 <p class="lede">A house robot you can build for about ${bom:,.0f}, trying real chores in a simulated copy of
-its owner's apartment. These are scripted attempts, recorded straight from the physics sim. The ones marked
-"Not yet" are what the learned brain has to fix.</p>
+its owner's apartment. These are scripted attempts, recorded straight from the physics sim{lede_tail}</p>
 <div class="stats">
   <div class="stat"><b>{n_ok} of {len(keys)}</b><span>tasks worked</span></div>
   <div class="stat"><b>${bom:,.0f}</b><span>parts, plus a ${kit:,.0f} house kit</span></div>
@@ -141,9 +142,10 @@ brain from memorising one exact picture of the room.</p>
 
 <h2>What comes next</h2>
 <ul class="plain">
-  <li>Teleoperated demonstrations of the grasps that fail here (cloth, paper bag rims, the takeout bag handle), then imitation learning on them.</li>
+  <li>Teleoperated demonstrations of each chore, then imitation learning, so the robot finds things with its cameras instead of being told where they are.</li>
+  <li>Grasps still missing: the cardboard box (0.6 kg hanging off one wall twists out of the pinch; grab a corner or flatten it), the takeout bag's handle, shirts and jeans.</li>
   <li>Reinforcement learning for driving, docking from across the apartment and recovering from bumps.</li>
-  <li>Longer chores: loading the washer, moving laundry to the dryer, putting the iron and its cord away.</li>
+  <li>Longer chores: loading the washer, moving laundry to the dryer, putting the iron and its cord away, and vacuuming (with a trigger lock, a smart plug and a cord reel, so nothing has to be plugged in by hand).</li>
 </ul>
 
 <footer>Code, specs and the sim: <a href="{REPO}">{REPO.replace('https://', '')}</a>.

@@ -64,6 +64,7 @@ place(env, (2.0, -1.6), 0.0)
 k = I.ITEM_NAMES.index("can_1")
 qa, va = env.items.adr[k]
 env.items.active[k] = True
+env.items.set_fill(k, 0.0)                     # an empty can (a full one stays upright in the hand)
 R = env.data.xmat[env.robot].reshape(3, 3)
 w = R @ np.array([-0.12, -0.45, 0])
 env.data.qpos[qa:qa + 7] = [env.data.xpos[env.robot][0] + w[0], env.data.xpos[env.robot][1] + w[1], 0.07, 1, 0, 0, 0]

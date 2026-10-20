@@ -172,7 +172,9 @@ def body_xml(name="robot") -> str:
     outriggers = "".join(
         f'<geom name="outrigger_{k}" type="sphere" size="{G.outrigger_radius}" pos="{_f(sx * ox, sy * oy, orz)}" '
         f'mass="0.05" material="rubber" class="glide"/>'
-        f'<geom type="box" size="0.03 0.012 0.008" pos="{_f(sx * (ox - 0.03), sy * oy, orz + 0.02)}" mass="0.03" material="steel" class="visual"/>'
+        f'<geom type="capsule" size="0.011" fromto="{_f(sx * (hx - 0.04), sy * (hy - 0.03), -hz + 0.03, sx * ox, sy * oy, orz + 0.03)}" '
+        f'mass="0.06" material="alu" class="visual"/>'                               # arm out from the chassis corner
+        f'<geom type="box" size="0.006 0.016 0.016" pos="{_f(sx * ox, sy * oy, orz + 0.022)}" mass="0.01" material="steel" class="visual"/>'
         for k, (sx, sy) in (("fl", (1, 1)), ("fr", (1, -1)), ("rl", (-1, 1)), ("rr", (-1, -1))))
     cliffs = "".join(
         f'<site name="cliff_{k}" pos="{_f(sx * (hx - 0.02), sy * (hy - 0.02), -hz - 0.002)}" size="0.004" rgba="1 0 0 1"/>'

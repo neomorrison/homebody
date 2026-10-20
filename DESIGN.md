@@ -16,7 +16,7 @@
 5. **The brain only gets on-board senses.** Everything else is in `info`.
 6. **Durability is designed in and tested.** See below.
 
-## Parts (about $1,190, plus a $50 house kit)
+## Parts (about $1,200, plus a $90 house kit)
 
 | Part | Qty | Each | Total |
 |---|---|---|---|
@@ -44,7 +44,7 @@
 | E-stop, fuses, wiring, connectors | 1 | $40 | $40 |
 | PETG filament, fasteners | 1 | $40 | $40 |
 | Dock: 42 V 2 A charger, spring contacts, IR LED, MCU, stand | 1 | $50 | $50 |
-| House kit: 2 button pushers for the washer/dryer start, printed AprilTags | 1 | $50 | $50 |
+| House kit: 2 button pushers for the washer/dryer start, printed AprilTags, vacuum trigger lock + smart plug + cord reel | 1 | $90 | $90 |
 
 Optional: Orbbec Gemini 2 depth camera ($267) in place of the head camera (`EnvConfig(depth=True)`).
 Servo, hub-motor and battery figures are reseller listings or estimates; bench-test before training for real.
@@ -80,6 +80,30 @@ it holds into the tote.
 - **Laundry closet door:** opens toward whoever opens it, so the robot can pull it only about 12°
   before its own body is in the way. The real louvered folding doors need less room, so the sim is
   pessimistic here.
+
+## Handling things
+
+- **Small things go in the tote, big ones in the hand.** The tote is 24 x 26 x 18 cm. A paper
+  bag (25 x 15 x 30 cm) gets pinched by its rim and carried to recycling instead.
+- **Reach out, then turn the wrist.** Tucked in, the gripper sits beside the right drive wheel, and an
+  open finger jams on it if the wrist turns there.
+- **Drinks stay upright.** The wrist-pitch servo's load reading weighs what the gripper holds (tip
+  25°, read, tip back). Calibrate on hardware with one known weight: `WEIGH_ZERO_KG`, `WEIGH_SCALE`
+  in `baselines.py`.
+- **Grip strength.** The gripper's torque limit (25%) gives about 21 N of squeeze in sim. That is
+  enough for anything carried from its middle, but not for a 0.6 kg box hanging off one wall.
+
+## Vacuuming (planned)
+
+The owner's vacuum is corded, with a trigger and a floor head that folds flat. Carrying and pushing
+it are within reach: it's held at about 0.9 m and driven in strokes, with the head taking the weight.
+The head unfolds by setting it on the floor and raising the handle. Two steps are too fiddly for
+this gripper, so the house kit handles them:
+
+| Step | Fix | Cost |
+|---|---|---|
+| Hold the handle and pull the trigger | trigger lock clip, power switched by a smart plug | $5 + $10 |
+| Plug into the wall, wind the cord | leave it plugged in through a retractable cord reel | $25 |
 
 ## Durability and falls
 

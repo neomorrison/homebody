@@ -1,6 +1,6 @@
 # homebody
 
-A house robot you can build for about $1,250, and a simulation of the home it works in.
+A house robot you can build for about $1,200 (plus a $90 kit of helpers for the house), and a simulation of the home it works in.
 
 **Watch it try the chores: [neomorrison.github.io/homebody](https://neomorrison.github.io/homebody/)**
 
@@ -143,14 +143,28 @@ time).
 | All 22 items start in the house, none fall through | yes |
 
 `scripts/record_tasks.py` (videos on the [site](https://neomorrison.github.io/homebody/)) adds:
-reaching into the dryer drum at 1.52 m, and backing onto the dock from 1.2 m to charge at 1.9 A.
-The sock and the paper bag fail with the scripted grasp.
+reaching into the dryer drum at 1.52 m, backing onto the dock from 1.2 m to charge at 1.9 A, and
+the grasps below. `scripts/grasp_check.py` runs each one over several seeds and random orientations.
+
+| Item | How | Check |
+|---|---|---|
+| Sock | jaws close across one patch, fingertips 1 mm off the floor | 6/6 into the tote |
+| Can, sneaker, slides | jaws close across the narrowest side | 3/3 to 5/5 each |
+| Paper bag | too big for the tote: pinch the rim from above, carry it | 6/6 carried |
+| Can with drink in it | weigh it on the wrist, keep it upright in the hand | 10/10 cans sorted, no spills |
+
+**Drinks.** Cans start 0 to 100% full (half are empty). After lifting, the robot tips its wrist 25°
+and reads the wrist-pitch servo's load, the same number a real Feetech servo reports over its bus.
+It reads within a few grams (a 66% full can: 248 g measured, 249 g true). Above 50 g there's drink
+in it, so the can stays upright in the hand instead of being tossed in the tote. A can with liquid
+tipped past 60° counts as a spill (`info["spills"]`, minus 2 in the `chores` reward); the old
+blind toss spills a full can every time.
 
 Not yet:
-- **Grasps:** the paper bags (pinch the rim), clothes (pinch the fabric) and the takeout bag (hook the
-  handle) each need their own grasp; demonstrations should teach these first.
+- **Grasps:** the cardboard box (0.6 kg hanging off one wall twists out of a 21 N pinch: grab a
+  corner or flatten it), shirts and jeans, and the takeout bag (hook the handle).
 - **Bigger chores:** loading the washer, the dryer transfer, the bedroom door from the hallway side,
-  and docking from across the apartment.
+  docking from across the apartment, and vacuuming (see [DESIGN.md](DESIGN.md)).
 
 ## Implanting the brain
 

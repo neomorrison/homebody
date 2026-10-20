@@ -75,8 +75,9 @@ def r_energy(info, prev):
 
 
 def r_chores(info, prev):
-    """Survival + energy + one point per item put where it belongs (minus one per item taken out)."""
-    return r_energy(info, prev) + float(info["tidy"] - prev["tidy"])
+    """Survival + energy + one point per item put where it belongs (minus one per item taken out),
+    minus two per drink spilled."""
+    return r_energy(info, prev) + float(info["tidy"] - prev["tidy"]) - 2.0 * (info["spills"] - prev.get("spills", 0))
 
 
 def r_dock_shaped(info, prev):
@@ -454,6 +455,7 @@ class HomebodyEnv(gym.Env):
         self.energy_charged += max(-e, 0.0)
         self.broken |= self.part_damage > self.part_limit
         self._integrate_odom()
+        self.items.update_spills(d)
         self.prev_action = a
         self.t += self.dt
 
@@ -637,6 +639,7 @@ class HomebodyEnv(gym.Env):
             "door_latched": {n: bool(self.model.jnt_range[dd["jid"]][1] < 0.1) for n, dd in self.doors.items()},
             "washer_door": float(d.qpos[self.mdoor["washer"][0]]), "dryer_door": float(d.qpos[self.mdoor["dryer"][0]]),
             "tidy": tidy, "items": where, "items_active": int(self.items.active.sum()),
+            "spills": int(self.items.spilled.sum()),
             "motor_temp_max": float(self.motors.temp.max()), "pushed": self.push is not None,
             "energy_used_wh": self.energy_used / 3600.0, "energy_charged_wh": self.energy_charged / 3600.0,
         }

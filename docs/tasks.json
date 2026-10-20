@@ -7,32 +7,39 @@
     "seconds": 13.1
   },
   "pick_can": {
-    "title": "Pick up a can",
+    "title": "Pick up an empty can",
     "success": true,
     "note": "The can ended up in the tote.",
     "video": "videos/pick_can.mp4",
-    "seconds": 22.2
+    "seconds": 32.7
+  },
+  "full_can": {
+    "title": "Don't spill the drink",
+    "success": true,
+    "note": "Weighed 190 g (an empty can is 15 g), so it kept the can upright and carried it off without spilling.",
+    "video": "videos/full_can.mp4",
+    "seconds": 33.7
   },
   "pick_sneaker": {
     "title": "Pick up a sneaker",
     "success": true,
     "note": "The sneaker ended up in the tote.",
     "video": "videos/pick_sneaker.mp4",
-    "seconds": 22.2
+    "seconds": 30.0
   },
   "pick_sock": {
     "title": "Pick up a sock",
-    "success": false,
-    "note": "The sock was not picked up (it ended up on the floor).",
+    "success": true,
+    "note": "The sock ended up in the tote.",
     "video": "videos/pick_sock.mp4",
-    "seconds": 22.2
+    "seconds": 30.0
   },
   "pick_paper_bag": {
-    "title": "Pick up a paper bag",
-    "success": false,
-    "note": "The paper bag was not picked up (it ended up on the floor).",
+    "title": "Carry a paper bag",
+    "success": true,
+    "note": "Pinched the rim, lifted the bag and carried it 1 m without dropping it.",
     "video": "videos/pick_paper_bag.mp4",
-    "seconds": 22.2
+    "seconds": 30.5
   },
   "door": {
     "title": "Open the laundry closet",
@@ -58,8 +65,8 @@
   "shove": {
     "title": "Take a bump",
     "success": true,
-    "note": "Rode out the 80 N bump; the 200 N shove tipped it over. A tipped robot stops its motors and calls for help.",
+    "note": "Rode out the 80 N bump; the 200 N shove did not tip it. A tipped robot stops its motors and calls for help.",
     "video": "videos/shove.mp4",
-    "seconds": 13.5
+    "seconds": 17.0
   }
 }

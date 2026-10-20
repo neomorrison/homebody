@@ -370,4 +370,7 @@ def bill_of_materials() -> list[tuple[str, int, float]]:
 HOUSE_KIT = [
     ("SwitchBot-style button pushers (washer + dryer start)", 2, 25.0),
     ("Printed AprilTag markers (dock, door, washer, dryer, basket, trash can, pod bucket)", 1, 0.0),
+    ("Vacuum: trigger lock clip", 1, 5.0),
+    ("Vacuum: Wi-Fi smart plug (robot switches it on and off)", 1, 10.0),
+    ("Vacuum: retractable cord reel (stays plugged in, no cord to wind)", 1, 25.0),
 ]

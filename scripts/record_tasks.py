@@ -112,13 +112,15 @@ def drop_item(env, name, local=(-0.12, -0.45)):
 # tasks: each returns (success: bool, what happened: str)
 # ----------------------------------------------------------------------------
 
-def task_pick(item, label):
+def task_pick(item, label, fill=0.0):
     def run(rec):
         env = rec.env
         place(env, (2.0, -1.6), 0.0)
         k = drop_item(env, item)
+        if I.ITEMS[k].liquid:
+            env.items.set_fill(k, fill)
         rec.follow(1.7, -24, 120)
-        rec.caption = f"Pick the {label} off the foyer floor and drop it in the deck tote"
+        rec.caption = f"Pick the {label} off the floor and drop it in the deck tote"
         rec.hold(1.0)
         B.pick_into_tote(env, env.items.body[k])
         rec.hold(1.5)
@@ -127,6 +129,43 @@ def task_pick(item, label):
         return lifted, (f"The {label} ended up in the tote." if lifted else
                         f"The {label} was not picked up (it ended up {where or 'on the floor'}).")
     return run
+
+
+def task_full_can(rec):
+    env = rec.env
+    place(env, (2.0, -1.6), 0.0)
+    k = drop_item(env, "can_1")
+    env.items.set_fill(k, 0.5)
+    rec.follow(1.7, -24, 120)
+    rec.caption = "A can that is still half full: pick it up, weigh it on the wrist, decide"
+    rec.hold(1.0)
+    B.pick_into_tote(env, env.items.body[k])
+    kg = env.last_weight
+    if getattr(env, "holding", None) is None:
+        return False, f"Weighed {kg * 1000:.0f} g but treated it as empty and dropped it in the tote."
+    rec.caption = f"Weighs {kg * 1000:.0f} g: there's drink in it. Keep it upright and carry it to the kitchen"
+    rec.follow(2.2, -50, 120)
+    B.carry(env, env.holding, v=0.25, seconds=4.0)
+    rec.hold(1.0)
+    up = env.data.xmat[env.items.body[k]][8]
+    ok = env.info["spills"] == 0 and env.data.xpos[env.items.body[k]][2] > 0.3 and up > 0.9
+    return ok, (f"Weighed {kg * 1000:.0f} g (an empty can is 15 g), so it kept the can upright and carried it "
+                f"off without spilling." if ok else "The drink spilled.")
+
+
+def task_carry_bag(rec):
+    env = rec.env
+    place(env, (2.0, -1.6), 0.0)
+    k = drop_item(env, "paper_bag_1")
+    rec.follow(1.9, -20, 120)
+    rec.caption = "A paper bag is too big for the tote: pinch the rim and carry it to recycling"
+    rec.hold(1.0)
+    body = env.items.body[k]
+    B.pick_and_carry(env, body, v=0.25, seconds=4.0)
+    rec.hold(1.0)
+    held = B._lowest_z(env, body) > 0.1
+    return held, ("Pinched the rim, lifted the bag and carried it 1 m without dropping it." if held else
+                  "The bag slipped out of the pinch.")
 
 
 def task_drive(rec):
@@ -234,10 +273,11 @@ def task_shove(rec):
 
 TASKS = {
     "drive": ("Drive the hallway", task_drive),
-    "pick_can": ("Pick up a can", task_pick("can_1", "can")),
+    "pick_can": ("Pick up an empty can", task_pick("can_1", "can")),
+    "full_can": ("Don't spill the drink", task_full_can),
     "pick_sneaker": ("Pick up a sneaker", task_pick("sneaker_l", "sneaker")),
     "pick_sock": ("Pick up a sock", task_pick("sock_1", "sock")),
-    "pick_paper_bag": ("Pick up a paper bag", task_pick("paper_bag_1", "paper bag")),
+    "pick_paper_bag": ("Carry a paper bag", task_carry_bag),
     "door": ("Open the laundry closet", task_door),
     "dryer": ("Reach into the dryer", task_dryer_reach),
     "dock": ("Charge itself", task_dock),

@@ -125,13 +125,21 @@ def run(env, seconds, fn):
 # scripted chores (sim-assisted: targets come from ground truth, not cameras)
 # ---------------------------------------------------------------------------
 
-def move_grip(env, target, servos_fn, seconds, lift_gain=10.0, rise_first=False):
+def move_grip(env, target, servos_fn, seconds, lift_gain=10.0, rise_first=False, drive=False):
     """Lift + telescope so the grip centre reaches ``target`` (world). ``rise_first`` changes height
-    before reaching out, so the arm doesn't sweep under things on the way."""
+    before reaching out, so the arm doesn't sweep under things on the way. ``drive`` also creeps the
+    base forward or back to close the along-the-robot error, which the telescope can't."""
     tr, ext, _ = cartesian_goal(env, target)
     if rise_first:
         run(env, seconds, lambda e: command(e, lift=lift_cmd(e, tr), servos=servos_fn(e)))
-    return run(env, seconds, lambda e: command(e, lift=lift_cmd(e, tr, lift_gain), arm=arm_cmd(e, ext), servos=servos_fn(e)))
+    if not drive:
+        return run(env, seconds, lambda e: command(e, lift=lift_cmd(e, tr, lift_gain), arm=arm_cmd(e, ext), servos=servos_fn(e)))
+
+    def f(e):
+        fwd = to_base(e, target)[0] - to_base(e, grip_point(e))[0]
+        return command(e, wheels=wheel_duty(e, float(np.clip(1.5 * fwd, -0.06, 0.06)), 0.0, kv=1.5),
+                       lift=lift_cmd(e, tr, lift_gain), arm=arm_cmd(e, ext), servos=servos_fn(e))
+    return run(env, seconds, f)
 
 
 DROP_IN_TOTE = STOW_Q.copy()
@@ -139,21 +147,147 @@ DROP_IN_TOTE[0], DROP_IN_TOTE[1] = math.radians(120), math.radians(90)
 DROP_IN_TOTE[2] = math.radians(90)          # roll so the jaws open sideways: otherwise the item rests on the lower jaw
 
 
-def pick_into_tote(env, body):
-    """Pick the item ``body`` (beside the robot, within the telescope's reach) and drop it in the deck tote."""
-    q_open = STOW_Q.copy()
-    q_open[3] = 0.055
-    p = env.data.xpos[body].copy()
-    move_grip(env, p + [0, 0, 0.12], lambda e: servo_duty(e, q_open), 4)
-    move_grip(env, np.array([p[0], p[1], max(p[2], 0.024)]), lambda e: servo_duty(e, q_open), 4, lift_gain=6.0)
-    run(env, 0.7, lambda e: command(e, servos=servo_duty(e, q_open)))
-    run(env, 1.0, lambda e: command(e, servos=servo_duty(e, q_open, grip=1)))
-    run(env, 4, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, STOW_Q, grip=1)))
-    ramp = servo_ramp(env, STOW_Q, DROP_IN_TOTE, 2.5, grip=1)
+FINGERTIP_BELOW_GRIP = 0.0225     # fingertips sit this far below the grip-centre site
+
+
+def jaw_yaw(env, axis_world):
+    """Wrist yaw (gripper pointing down) that makes the jaws close along ``axis_world``.
+    The jaws are symmetric, so the two solutions 180 deg apart are equivalent: take the one nearer 0."""
+    u = to_base(env, env.data.xpos[env.robot] + np.asarray(axis_world, float))
+    yaw = math.atan2(-u[0], u[1])
+    return (yaw + math.pi / 2) % math.pi - math.pi / 2
+
+
+def grasp_plan(env, body):
+    """Where to put the grip centre and which way to close the jaws for the item ``body``.
+    Returns (grip target in world, jaw axis in world, rise first?)."""
+    from . import items as I
+    d = env.data
+    k = env.items.body.index(body)
+    it = I.ITEMS[k]
+    p = d.xpos[body].copy()
+    R = d.xmat[body].reshape(3, 3)
+    if it.shape == "cloth":
+        rows, cols = it.grid
+        axis = R[:, 0] if rows <= cols else R[:, 1]        # close across one patch, where it has no neighbour
+        return np.array([p[0], p[1], FINGERTIP_BELOW_GRIP + 0.001]), axis, False
+    if it.shape == "hollow" and R[2, 2] > 0.8:              # upright and open-topped: pinch a long wall's rim
+        hx, hy, hz = it.size
+        walls = [p + R @ np.array([0, s * (hy - 0.003), 0]) for s in (1, -1)]
+        wall = min(walls, key=lambda w: abs(to_base(env, w)[1]))   # the wall nearer the mast: less reach
+        rim = p[2] + hz
+        return np.array([wall[0], wall[1], rim - 0.04 + FINGERTIP_BELOW_GRIP]), R[:, 1], True
+    axis = None
+    if it.geom != "cylinder":                               # close across the narrowest side
+        hx, hy = it.size[0], it.size[1]
+        axis = R[:, 0] if hx < hy else R[:, 1]
+    return np.array([p[0], p[1], max(p[2], 0.024)]), axis, False
+
+
+SAFE_Z = 0.30          # grip-centre height that clears the chassis, wheels and tote when reaching out
+
+
+def pick_up(env, body):
+    """Grasp the item ``body`` (beside the robot, within the telescope's reach) and lift it clear.
+    Rises before reaching (tucked in, the low gripper scrapes the chassis and the right wheel), turns
+    the wrist out there, creeps the base to centre the jaws, then descends and closes.
+    Returns the servo targets that keep holding it."""
+    target, axis, tall = grasp_plan(env, body)
+    q_reach = STOW_Q.copy()
+    q_reach[3] = 0.055
+    q_open = q_reach.copy()
+    if axis is not None:
+        q_open[0] = jaw_yaw(env, axis)
+    above = target + [0, 0, 0.12]
+    if tall:                                                # clear the item's top before reaching over it
+        above[2] = max(above[2], env.data.xpos[body][2] + 0.25)
+    high = above.copy()
+    high[2] = max(high[2], SAFE_Z)
+    move_grip(env, high, lambda e: servo_duty(e, q_reach), 4, rise_first=True)
+    run(env, 1.0, lambda e: command(e, servos=servo_duty(e, q_open)))
+    move_grip(env, above, lambda e: servo_duty(e, q_open), 2.5, drive=True)   # turning shifts the grip: re-aim
+    move_grip(env, target, lambda e: servo_duty(e, q_open), 4, lift_gain=6.0)
+    tr, _, _ = cartesian_goal(env, target)                   # settle the last centimetre, then hold there
+    hold = lambda e: lift_cmd(e, tr, 25.0)
+    run(env, 1.0, lambda e: command(e, lift=hold(e), servos=servo_duty(e, q_open)))
+    run(env, 1.0, lambda e: command(e, lift=hold(e), servos=servo_duty(e, q_open, grip=1)))
+    run(env, 4, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, q_open, grip=1)))
+    return q_open
+
+
+def weigh(env, q, tilt_deg=25.0):
+    """Tip the wrist a little and read the wrist-pitch servo's load (what the servo reports over the
+    bus, as a fraction of stall). Returns kg held, from the change against the empty-hand estimate."""
+    i = S.SERVO_NAMES.index("wrist_pitch")
+    j = S.DUTY_NAMES.index("wrist_pitch")
+    load = lambda e: float(e.data.actuator_force[e.duty_act[j]] / e.stall[j])      # = obs "load.wrist_pitch"
+    q_t = q.copy()
+    q_t[1] = math.radians(tilt_deg)
+    vals = []
+    run(env, 1.2, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, q_t, grip=1)))
+    for _ in range(10):
+        run(env, 0.05, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, q_t, grip=1)))
+        vals.append(load(env))
+    run(env, 1.0, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, q, grip=1)))
+    torque = abs(np.mean(vals)) * S.SERVOS[i].motor.stall_torque
+    lever = 0.035 + S.GEOM.finger_length * 0.75 + 0.06    # pitch axis to a held can's centre, roughly
+    raw = torque / (9.81 * lever * math.sin(math.radians(tilt_deg)))
+    return max((raw - WEIGH_ZERO_KG) / WEIGH_SCALE, 0.0)
+
+
+# Calibration (sim, 2026-10-19): empty hand reads 0.122 "raw kg", a 15 g can 0.137, a full 370 g can
+# 0.462. On hardware, redo this with a known weight: the same two numbers.
+WEIGH_ZERO_KG, WEIGH_SCALE = 0.122, 0.915
+LIQUID_KG = 0.05                   # an empty can is 15 g: anything well above that still has drink in it
+
+
+def _is_can(env, body):
+    from . import items as I
+    return I.ITEMS[env.items.body.index(body)].liquid > 0
+
+
+def pick_into_tote(env, body, check_liquid=True):
+    """Pick a small item and drop it in the deck tote. Big ones (paper bags, the box) don't fit the
+    tote: use ``pick_and_carry``. A can that weighs more than an empty one still has drink in it: it
+    stays upright in the hand instead (returns early with ``env.info``; the caller decides where it goes)."""
+    q = pick_up(env, body)
+    if check_liquid and _is_can(env, body):
+        env.last_weight = weigh(env, q)
+        if env.last_weight > LIQUID_KG:
+            env.holding = q
+            return run(env, 0.5, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, q, grip=1)))
+    ramp = servo_ramp(env, q, DROP_IN_TOTE, 2.5, grip=1)
     run(env, 4, lambda e: command(e, lift=lift_cmd(e, 0.65), arm=arm_cmd(e, 0.0), servos=ramp(e)))
     q_rel = DROP_IN_TOTE.copy()
     q_rel[3] = 0.055
     return run(env, 2, lambda e: command(e, lift=lift_cmd(e, 0.65), servos=servo_duty(e, q_rel)))
+
+
+def pick_and_carry(env, body, v=0.25, seconds=4.0):
+    """Pick a big item, tuck the arm in and drive off holding it, as you would carry a paper bag to
+    recycling. Returns the last info; check where the item is afterwards."""
+    return carry(env, pick_up(env, body), v, seconds)
+
+
+def carry(env, q, v=0.25, seconds=4.0):
+    """Holding something with servo targets ``q``: tuck the arm in, keep the wrist as it is (a drink
+    stays upright), and drive off."""
+    run(env, 3, lambda e: command(e, lift=lift_cmd(e, 0.65), arm=arm_cmd(e, 0.08), servos=servo_duty(e, q, grip=1)))
+    return run(env, seconds, lambda e: command(e, wheels=wheel_duty(e, v, 0.0), lift=lift_cmd(e, 0.65),
+                                               arm=arm_cmd(e, 0.08), servos=servo_duty(e, q, grip=1)))
+
+
+def _lowest_z(env, body):
+    """Lowest point of the item's geoms (axis-aligned bounding approximation)."""
+    m, d = env.model, env.data
+    root = m.body_rootid[body]
+    z = []
+    for g in range(m.ngeom):
+        if m.body_rootid[m.geom_bodyid[g]] == root:
+            R = d.geom_xmat[g].reshape(3, 3)
+            z.append(d.geom_xpos[g][2] - np.abs(R[2]) @ m.geom_size[g] if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX
+                     else d.geom_xpos[g][2] - m.geom_rbound[g])
+    return min(z)
 
 
 def open_lever_door(env, lever_geom="bedroom_door_lever_b"):

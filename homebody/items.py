@@ -42,12 +42,13 @@ class Item:
     grid: tuple = ()             # cloth: (rows, cols)
     soft: bool = False           # cloth: squishy contacts (pillows)
     stiffness: float = 0.01      # cloth: joint spring
+    liquid: float = 0.0          # kg of drink when full (cans); each episode fills it 0-100%, half are empty
 
 
 ITEMS = [
     Item("takeout_bag", "trash", "handled", (0.11, 0.08, 0.06), 0.45, (0.95, 0.95, 0.92, 1), (-4.15, 3.40), BED),
-    Item("can_1", "recycling", "rigid", (0.033, 0.061), 0.015, (0.80, 0.10, 0.12, 1), (-3.55, 3.94), DESK, geom="cylinder"),
-    Item("can_2", "recycling", "rigid", (0.033, 0.061), 0.015, (0.75, 0.78, 0.82, 1), (-3.20, 3.95), DESK, geom="cylinder"),
+    Item("can_1", "recycling", "rigid", (0.033, 0.061), 0.015, (0.80, 0.10, 0.12, 1), (-3.55, 3.94), DESK, geom="cylinder", liquid=0.355),
+    Item("can_2", "recycling", "rigid", (0.033, 0.061), 0.015, (0.75, 0.78, 0.82, 1), (-3.20, 3.95), DESK, geom="cylinder", liquid=0.355),
     Item("paper_bag_1", "recycling", "hollow", (0.125, 0.075, 0.15), 0.08, (0.72, 0.55, 0.35, 1), (-3.30, 1.12)),
     Item("paper_bag_2", "recycling", "hollow", (0.125, 0.075, 0.15), 0.08, (0.72, 0.55, 0.35, 1), (-3.88, 0.22)),
     Item("cardboard_box", "recycling", "hollow", (0.22, 0.17, 0.15), 0.6, (0.70, 0.55, 0.38, 1), (-3.70, 0.62)),
@@ -204,12 +205,50 @@ class Items:
         self.body = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"item_{n}") for n in ITEM_NAMES]
         self.sites = container_sites
         self.active = np.zeros(len(ITEMS), bool)
+        self.mass0 = m.body_mass[self.body].copy()
+        self.inertia0 = m.body_inertia[self.body].copy()
+        self.fill = np.zeros(len(ITEMS))                # fraction full, for items that can hold liquid
+        self.spilled = np.zeros(len(ITEMS), bool)
+
+    def set_fill(self, k, fill):
+        """Fill item ``k`` with liquid (0..1 of ITEMS[k].liquid kg); mass and inertia follow."""
+        it = ITEMS[k]
+        self.fill[k] = fill
+        mass = self.mass0[k] + fill * it.liquid
+        self.m.body_mass[self.body[k]] = mass
+        self.m.body_inertia[self.body[k]] = self.inertia0[k] * mass / self.mass0[k]
+        self._dirty = True
+
+    def apply(self, data):
+        """Recompute MuJoCo's derived constants after mass changes (call before stepping)."""
+        if getattr(self, "_dirty", False):
+            saved = data.qpos.copy(), data.qvel.copy(), data.act.copy(), data.time
+            mujoco.mj_setConst(self.m, data)             # uses data as scratch at qpos0: restore after
+            data.qpos[:], data.qvel[:], data.act[:], data.time = saved
+            mujoco.mj_forward(self.m, data)
+            self._dirty = False
+
+    def update_spills(self, data, tilt_cos=0.5):
+        """A container with liquid tipped past 60 degrees has spilled: it's empty now, and the floor
+        needs cleaning. Returns the item indices that spilled this call."""
+        out = []
+        for k, it in enumerate(ITEMS):
+            if it.liquid and self.active[k] and self.fill[k] > 0.05 and data.xmat[self.body[k]][8] < tilt_cos:
+                self.spilled[k] = True
+                self.set_fill(k, 0.0)
+                out.append(k)
+        self.apply(data)
+        return out
 
     def place(self, rng, kinds, qpos, qvel, height_at, is_free, bucket_pos, scatter=False, jitter=0.08,
               dropout=0.0):
         """Put the items of ``kinds`` where they were in the scan (plus jitter), or anywhere free
         with ``scatter``; ``dropout`` leaves each one out with that probability. Pods go in the bucket."""
         self.active[:] = False
+        self.spilled[:] = False
+        for k, it in enumerate(ITEMS):
+            if it.liquid:
+                self.set_fill(k, 0.0 if rng.uniform() < 0.5 else rng.uniform(0.2, 1.0))
         npod = 0
         placed = []                                     # floor footprints so far: ((x, y), radius)
         for k, it in enumerate(ITEMS):

@@ -68,6 +68,7 @@ R = env.data.xmat[env.robot].reshape(3, 3)
 p = env.data.xpos[env.robot] + R @ np.array([-0.12, -0.45, 0])
 env.data.qpos[qa:qa + 7] = [p[0], p[1], 0.07, 1, 0, 0, 0]
 mujoco.mj_forward(env.model, env.data)
+env.items.set_fill(k, 0.0)                      # an empty can
 B.run(env, 1, lambda e: B.command(e))
 B.pick_into_tote(env, env.items.body[k])
 view["text"] = "laundry closet: gripping the knob, pulling the door off its catch"
