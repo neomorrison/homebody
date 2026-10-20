@@ -1,7 +1,6 @@
 """Drive the robot yourself in the MuJoCo viewer.
 
-    python scripts/view.py                 # your scanned home, terrain level 1
-    python scripts/view.py --scan          # ...drawn with the textured scan
+    python scripts/view.py                 # your recreated home, terrain level 1
     python scripts/view.py --terrain 0     # flat lab floor
 
 Keys (click the viewer window first):
@@ -30,10 +29,10 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--terrain", type=float, default=1.0)
 ap.add_argument("--seed", type=int, default=0)
 ap.add_argument("--push-rate", type=float, default=0.0, help="accidental shoves per minute")
-ap.add_argument("--scan", action="store_true", help="draw the textured scan of the home")
+
 a = ap.parse_args()
 
-env = HomebodyEnv(EnvConfig(terrain_level=a.terrain, push_rate=a.push_rate, reward="chores", scan_visual=a.scan))
+env = HomebodyEnv(EnvConfig(terrain_level=a.terrain, push_rate=a.push_rate, reward="chores"))
 obs, info = env.reset(seed=a.seed)
 state = {"v": 0.0, "w": 0.0, "lift": 0.0, "arm": 0.0, "q": B.STOW_Q.copy(), "grip": False, "reset": False}
 STEP = math.radians(6)

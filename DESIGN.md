@@ -23,7 +23,7 @@
 | Used hoverboard (2 hub motors, mainboard; reflash with hoverboard-firmware-hack-FOC) | 1 | $50 (est) | $50 |
 | ST-Link programmer for the reflash | 1 | $10 | $10 |
 | New 36 V 10S2P battery with BMS (don't reuse the hoverboard's) | 1 | $70 (est) | $70 |
-| Base: plywood/aluminium chassis, 2 casters, 4 outrigger arms + wheels, foam bumper | 1 | $85 | $85 |
+| Base: plywood/aluminium chassis, 2 spring-loaded casters, 4 outrigger arms + wheels, foam bumper | 1 | $95 | $95 |
 | Steel ballast plate, 12 kg | 1 | $35 | $35 |
 | Deck tote + mounts | 1 | $10 | $10 |
 | Lift: 1.6 m 2040 rail, V-wheel carriage, NEMA17, belt, 2:1 pulleys, constant-force spring | 1 | $150 | $150 |
@@ -72,8 +72,11 @@ it holds into the tote.
   1.57 m, enough to slide the gripper into the drum.
 - **Width:** at 64 cm across the outriggers, the robot fits the 1.0 m hallway, with about 0.9 m to
   turn in place.
-- **Dock:** on the foyer wall. The bedroom walls are taken by the bed, desk, mirror and the door's
-  swing, and the foyer is central.
+- **Dock:** on the kitchen wall by the foyer. The bedroom walls are taken by the bed, desk, mirror
+  and the door's swing, and this spot is central.
+- **Sprung casters:** with rigid casters, the four-point base rocked on uneven floor and lifted a
+  drive wheel, which stalled docking. Each caster now rides a 12 mm spring (about $10 more), so both
+  hub wheels stay loaded.
 - **Laundry closet door:** opens toward whoever opens it, so the robot can pull it only about 12°
   before its own body is in the way. The real louvered folding doors need less room, so the sim is
   pessimistic here.
@@ -113,7 +116,8 @@ torque limit caps its grip at about 60 N so it can't crush things.
   deadband.
 - Hub motors use a first-order DC model at the firmware's current limit; the real FOC firmware differs.
 - Rugs are fixed in place, and the floor heightfield has 4 cm cells.
-- The house is a stand-in floor plan until the real rooms are scanned.
+- The home is a recreation measured from the scan: walls and furniture are simple solids, so small
+  shapes (handles, trim, cushions) are approximate.
 
 ## What next
 
@@ -122,5 +126,6 @@ torque limit caps its grip at about 60 N so it can't crush things.
    demonstrations per chore, then train ACT or SmolVLA on the RTX 3080.
 2. **RL for the body skills:** driving, docking, not tipping, recovering from shoves (`push_rate`).
    Use cheap sensors and many parallel environments; MJX on the GPU would speed this up.
-3. **Digital twin:** a phone lidar scan of the real rooms replaces `home.py`.
+3. **Rescan when the rooms change:** run `scripts/import_scan.py` on a new scan and re-measure the
+   placements in `home.py`.
 4. **Hardware:** bench-test one hub motor, the lift and a servo, and fit the motor models in `spec.py`.

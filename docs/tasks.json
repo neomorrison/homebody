@@ -1,0 +1,65 @@
+{
+  "drive": {
+    "title": "Drive the hallway",
+    "success": true,
+    "note": "Drove 3.7 m from the bedroom to the end of the hallway, 26 W.",
+    "video": "videos/drive.mp4",
+    "seconds": 13.1
+  },
+  "pick_can": {
+    "title": "Pick up a can",
+    "success": true,
+    "note": "The can ended up in the tote.",
+    "video": "videos/pick_can.mp4",
+    "seconds": 22.2
+  },
+  "pick_sneaker": {
+    "title": "Pick up a sneaker",
+    "success": true,
+    "note": "The sneaker ended up in the tote.",
+    "video": "videos/pick_sneaker.mp4",
+    "seconds": 22.2
+  },
+  "pick_sock": {
+    "title": "Pick up a sock",
+    "success": false,
+    "note": "The sock was not picked up (it ended up on the floor).",
+    "video": "videos/pick_sock.mp4",
+    "seconds": 22.2
+  },
+  "pick_paper_bag": {
+    "title": "Pick up a paper bag",
+    "success": false,
+    "note": "The paper bag was not picked up (it ended up on the floor).",
+    "video": "videos/pick_paper_bag.mp4",
+    "seconds": 22.2
+  },
+  "door": {
+    "title": "Open the laundry closet",
+    "success": true,
+    "note": "Door opened 12 degrees (the robot's own body blocks more in this layout).",
+    "video": "videos/door.mp4",
+    "seconds": 28.5
+  },
+  "dryer": {
+    "title": "Reach into the dryer",
+    "success": true,
+    "note": "Gripper inside the dryer drum at 1.52 m.",
+    "video": "videos/dryer.mp4",
+    "seconds": 17.5
+  },
+  "dock": {
+    "title": "Charge itself",
+    "success": true,
+    "note": "Charging at 1.9 A after backing in from 1.2 m.",
+    "video": "videos/dock.mp4",
+    "seconds": 16.1
+  },
+  "shove": {
+    "title": "Take a bump",
+    "success": true,
+    "note": "Rode out the 80 N bump; the 200 N shove tipped it over. A tipped robot stops its motors and calls for help.",
+    "video": "videos/shove.mp4",
+    "seconds": 13.5
+  }
+}

@@ -159,9 +159,13 @@ def body_xml(name="robot") -> str:
       <joint name="{w}" axis="0 1 0" limited="false" armature="{S.HUB_MOTOR.armature}" damping="{S.HUB_MOTOR.damping}" frictionloss="{S.HUB_MOTOR.friction}"/>
       <geom name="{w}" type="cylinder" size="{G.wheel_radius} {G.wheel_width / 2}" euler="90 0 0" mass="{S.HUB_MOTOR.mass}" material="rubber"/>
     </body>""" for w, s in (("wheel_l", 1), ("wheel_r", -1)))
+    # spring-loaded casters: with four contact points and a rigid chassis, a dip under one drive wheel
+    # would lift it off the floor; the springs let the casters give so both drive wheels stay down
     casters = "".join(
-        f'<geom name="caster_{k}" type="sphere" size="{G.caster_radius}" pos="{_f(x, 0, G.caster_radius - Z0)}" '
-        f'mass="0.08" material="alu" class="glide"/>'
+        f'<body name="caster_{k}" pos="{_f(x, 0, G.caster_radius - Z0)}">'
+        f'<joint name="caster_{k}" type="slide" axis="0 0 1" range="{-G.caster_travel} {G.caster_travel}" '
+        f'stiffness="{G.caster_spring}" springref="{G.caster_preload}" damping="300" armature="0.05"/>'
+        f'<geom name="caster_{k}" type="sphere" size="{G.caster_radius}" mass="0.08" material="alu" class="glide"/></body>'
         for k, x in (("front", G.caster_x), ("rear", -G.caster_x)))
     ox, oy = G.outrigger_xy
     orz = G.outrigger_radius + G.outrigger_clearance - Z0

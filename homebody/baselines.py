@@ -76,10 +76,11 @@ def wheel_duty(env, v, w, kv=0.3):
     return np.clip(ff + kv * (target - env.data.qvel[env.wheel_v]) / 10.0, -1, 1)
 
 
-def command(env, wheels=(0.0, 0.0), lift=None, arm=None, servos=None):
-    """Full action. Unspecified parts hold still: lift and arm hold their position, servos hold stow."""
+def command(env, wheels=None, lift=None, arm=None, servos=None):
+    """Full action. Unspecified parts hold still: wheels brake to zero speed (as the hub firmware does),
+    lift and arm hold their position, servos hold stow."""
     a = np.zeros(S.N_ACTIONS)
-    a[[A["wheel_l"], A["wheel_r"]]] = wheels
+    a[[A["wheel_l"], A["wheel_r"]]] = wheel_duty(env, 0.0, 0.0, kv=1.5) if wheels is None else wheels
     a[A["lift"]] = 0.0 if lift is None else lift
     a[A["arm"]] = 0.0 if arm is None else arm
     a[SERVO_ACT] = servo_duty(env, STOW_Q) if servos is None else servos

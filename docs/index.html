@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>homebody</title>
+<meta name="description" content="A DIY house robot for about $1,196, trying chores in a simulation of its owner's apartment.">
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1d1d1b;--mute:#6b6862;--line:#e3dfd6;--ok:#1f7a4d;--okbg:#e3f3ea;
+--bad:#a3341f;--badbg:#f8e6e1;--accent:#2f5d8a}
+@media (prefers-color-scheme:dark){:root{--bg:#151513;--card:#1f1f1c;--ink:#ecebe6;--mute:#a3a097;--line:#34332e;
+--ok:#6fcf9b;--okbg:#17321f;--bad:#f09a85;--badbg:#3a1d16;--accent:#8fb8e0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1120px;margin:0 auto;padding:40px 16px 64px}
+h1{font-size:40px;line-height:1.1;margin:0 0 12px;letter-spacing:-.02em}
+h2{font-size:24px;margin:56px 0 8px}
+p.lede{font-size:19px;color:var(--mute);max-width:720px;margin:0 0 20px}
+a{color:var(--accent)}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.stat b{display:block;font-size:20px}
+.stat span{color:var(--mute);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:18px;margin-top:18px}
+.task{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.task video{width:100%;aspect-ratio:960/544;background:#000;display:block}
+.body{padding:14px 16px 16px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.row h3{margin:0;font-size:17px}
+.badge{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.ok{color:var(--ok);background:var(--okbg)}.bad{color:var(--bad);background:var(--badbg)}
+.note{margin:8px 0 0;font-size:14px}
+.why{margin:8px 0 0;font-size:13px;color:var(--mute)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+@media (max-width:760px){.two{grid-template-columns:1fr}h1{font-size:30px}}
+figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+figure img{width:100%;display:block}
+figcaption{padding:10px 14px;font-size:13px;color:var(--mute)}
+table{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+td,th{text-align:left;padding:8px 12px;border-top:1px solid var(--line);vertical-align:top}
+th{width:150px;color:var(--mute);font-weight:500}
+tr:first-child td,tr:first-child th{border-top:0}
+td.num{text-align:right;white-space:nowrap}
+ul.plain{padding-left:20px}
+footer{margin-top:56px;color:var(--mute);font-size:13px}
+</style></head>
+<body><main>
+<h1>homebody</h1>
+<p class="lede">A house robot you can build for about $1,196, trying real chores in a simulated copy of
+its owner's apartment. These are scripted attempts, recorded straight from the physics sim. The ones marked
+"Not yet" are what the learned brain has to fix.</p>
+<div class="stats">
+  <div class="stat"><b>7 of 9</b><span>tasks worked</span></div>
+  <div class="stat"><b>$1,196</b><span>parts, plus a $50 house kit</span></div>
+  <div class="stat"><b>1.82 m</b><span>mast, reaches the dryer</span></div>
+  <div class="stat"><b>10</b><span>motor commands, 20 times a second</span></div>
+</div>
+
+<h2>Watch it try</h2>
+<p>Each clip is one attempt with no retakes. The caption bar shows the time, the room, the battery and the power draw.</p>
+<div class="grid">
+<article class="task">
+  <video src="videos/drive.mp4" poster="posters/drive.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Drive the hallway</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">Drove 3.7 m from the bedroom to the end of the hallway, 26 W.</p>
+    
+  </div>
+</article>
+<article class="task">
+  <video src="videos/pick_can.mp4" poster="posters/pick_can.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Pick up a can</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">The can ended up in the tote.</p>
+    
+  </div>
+</article>
+<article class="task">
+  <video src="videos/pick_sneaker.mp4" poster="posters/pick_sneaker.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Pick up a sneaker</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">The sneaker ended up in the tote.</p>
+    
+  </div>
+</article>
+<article class="task">
+  <video src="videos/pick_sock.mp4" poster="posters/pick_sock.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Pick up a sock</h3>
+      <span class="badge bad">Not yet</span></div>
+    <p class="note">The sock was not picked up (it ended up on the floor).</p>
+    <p class="why">Cloth is floppy: the scripted grasp closes on the patches and slips. Pinching fabric is the first thing the demonstrations will teach.</p>
+  </div>
+</article>
+<article class="task">
+  <video src="videos/pick_paper_bag.mp4" poster="posters/pick_paper_bag.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Pick up a paper bag</h3>
+      <span class="badge bad">Not yet</span></div>
+    <p class="note">The paper bag was not picked up (it ended up on the floor).</p>
+    <p class="why">A paper bag needs a pinch on its rim, not a squeeze across it. This grasp gets its own demonstrations too.</p>
+  </div>
+</article>
+<article class="task">
+  <video src="videos/door.mp4" poster="posters/door.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Open the laundry closet</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">Door opened 12 degrees (the robot&#x27;s own body blocks more in this layout).</p>
+    
+  </div>
+</article>
+<article class="task">
+  <video src="videos/dryer.mp4" poster="posters/dryer.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Reach into the dryer</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">Gripper inside the dryer drum at 1.52 m.</p>
+    
+  </div>
+</article>
+<article class="task">
+  <video src="videos/dock.mp4" poster="posters/dock.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Charge itself</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">Charging at 1.9 A after backing in from 1.2 m.</p>
+    
+  </div>
+</article>
+<article class="task">
+  <video src="videos/shove.mp4" poster="posters/shove.jpg" controls muted playsinline preload="none"></video>
+  <div class="body">
+    <div class="row"><h3>Take a bump</h3>
+      <span class="badge ok">Worked</span></div>
+    <p class="note">Rode out the 80 N bump; the 200 N shove tipped it over. A tipped robot stops its motors and calls for help.</p>
+    
+  </div>
+</article>
+</div>
+
+<h2>The apartment</h2>
+<p>The rooms are rebuilt from an iPhone LiDAR scan: walls, doorways and furniture are measured from the
+scan, and the floor and rug textures are cut from its photos. It is a clean recreation rather than the raw
+scan mesh, so colours, lighting and the movable furniture can change every episode. That keeps a camera-based
+brain from memorising one exact picture of the room.</p>
+<div class="two">
+  <figure><img src="media/home_plan.png" alt="Floor plan of the simulated apartment" loading="lazy">
+    <figcaption>Plan: bedroom with walk-in closet, 1 m hallway, living room and kitchen, foyer with the dock
+    (orange), laundry closet with the stacked washer and dryer. Blue squares are bins, pink lines are doors.</figcaption></figure>
+  <figure><img src="media/home_rooms.png" alt="Six camera views inside the simulated apartment" loading="lazy">
+    <figcaption>Inside: bedroom, closet, living room, kitchen, laundry closet, hallway.</figcaption></figure>
+</div>
+
+<h2>The robot</h2>
+<table>
+<tr><th>Base</th><td>Two hub motors from a used hoverboard, sprung casters, anti-tip outrigger wheels, 12 kg steel ballast, a tote on the deck</td></tr>
+<tr><th>Reach</th><td>A counterbalanced lift on a 1.82 m mast (the arm runs from 0.12 to 1.62 m high) and a telescoping arm reaching 0.54 m to the side</td></tr>
+<tr><th>Hand</th><td>Yaw, pitch and roll wrist with a parallel-jaw gripper on bus servos, and a camera in the palm</td></tr>
+<tr><th>Senses</th><td>Lidar, pan/tilt head camera, palm camera, IMU, bumper, cliff sensors, battery monitor, dock beacon, motor encoders</td></tr>
+<tr><th>Power</th><td>36 V 180 Wh Li-ion; backs onto a spring-contact dock to charge itself</td></tr>
+<tr><th>Brain</th><td>Runs on a desktop GPU over Wi-Fi; a Raspberry Pi 5 on board handles motors, sensors and safety</td></tr>
+</table>
+
+<h2>Parts</h2>
+<table>
+<tr><td>Used hoverboard (2 hub motors, mainboard; reflash with hoverboard-firmware-hack-FOC)</td><td class="num">$50</td></tr>
+<tr><td>ST-Link programmer for the reflash</td><td class="num">$10</td></tr>
+<tr><td>New 36 V 10S2P battery with BMS (don&#x27;t reuse the hoverboard&#x27;s)</td><td class="num">$70</td></tr>
+<tr><td>Base: plywood/aluminium chassis, 2 spring-loaded casters, 4 outrigger arms + wheels, foam bumper</td><td class="num">$95</td></tr>
+<tr><td>Steel ballast plate, 12 kg</td><td class="num">$35</td></tr>
+<tr><td>Deck tote (plastic bin) + mounts</td><td class="num">$10</td></tr>
+<tr><td>Lift: 1.6 m 2040 rail, V-wheel carriage, NEMA17, belt, 2:1 pulleys, constant-force spring</td><td class="num">$150</td></tr>
+<tr><td>Telescoping arm: 3 heavy-duty drawer slides, NEMA17, belt</td><td class="num">$60</td></tr>
+<tr><td>Stepper drivers (36 V capable, e.g. DM542-class) x2</td><td class="num">$24</td></tr>
+<tr><td>Feetech STS3250-C002 (wrist pitch, gripper) x2</td><td class="num">$148</td></tr>
+<tr><td>Feetech STS3215 12V (wrist yaw, wrist roll, head pan, head tilt) x4</td><td class="num">$88</td></tr>
+<tr><td>Bus servo driver board</td><td class="num">$12</td></tr>
+<tr><td>Printed parallel-jaw gripper (rack and pinion) with TPU finger pads</td><td class="num">$10</td></tr>
+<tr><td>Raspberry Pi 5 8 GB + cooler + microSD</td><td class="num">$95</td></tr>
+<tr><td>Slamtec RPLIDAR C1</td><td class="num">$80</td></tr>
+<tr><td>USB RGB camera, wide (head)</td><td class="num">$20</td></tr>
+<tr><td>USB RGB camera, wide (palm)</td><td class="num">$20</td></tr>
+<tr><td>BNO085 IMU</td><td class="num">$25</td></tr>
+<tr><td>IR cliff sensors x4 + bumper switches</td><td class="num">$17</td></tr>
+<tr><td>INA226 battery monitor</td><td class="num">$6</td></tr>
+<tr><td>940 nm photodiodes + op-amp (dock beacon) x4</td><td class="num">$16</td></tr>
+<tr><td>36 V -&gt; 12 V 10 A and 36 V -&gt; 5 V 5 A converters</td><td class="num">$25</td></tr>
+<tr><td>E-stop, fuses, wiring, connectors</td><td class="num">$40</td></tr>
+<tr><td>PETG filament + fasteners</td><td class="num">$40</td></tr>
+<tr><td>Dock: 42 V 2 A charger, spring contacts, IR LED, MCU, board</td><td class="num">$50</td></tr>
+<tr><th>Total</th><td class="num"><b>$1,196</b></td></tr>
+</table>
+
+<h2>What comes next</h2>
+<ul class="plain">
+  <li>Teleoperated demonstrations of the grasps that fail here (cloth, paper bag rims, the takeout bag handle), then imitation learning on them.</li>
+  <li>Reinforcement learning for driving, docking from across the apartment and recovering from bumps.</li>
+  <li>Longer chores: loading the washer, moving laundry to the dryer, putting the iron and its cord away.</li>
+</ul>
+
+<footer>Code, specs and the sim: <a href="https://github.com/neomorrison/homebody">github.com/neomorrison/homebody</a>.
+Rebuild this page with <code>python scripts/record_tasks.py</code> then <code>python scripts/build_site.py</code>.</footer>
+</main></body></html>

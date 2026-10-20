@@ -165,6 +165,9 @@ class Geometry:
     wheel_track: float = 0.38          # centre to centre
     caster_radius: float = 0.025
     caster_x: float = 0.20
+    caster_travel: float = 0.012       # sprung casters: +-12 mm
+    caster_spring: float = 4000.0      # N/m per caster: light, so the drive wheels carry the weight
+    caster_preload: float = 0.008      # m: sprung slightly down, so the casters still touch on a bump
     outrigger_radius: float = 0.020
     outrigger_clearance: float = 0.015 # anti-tip wheels ride this far above the floor
     outrigger_xy: tuple = (0.32, 0.32)  # wide enough that an 80 N shove at the mast top doesn't tip it (sim trials)
@@ -339,7 +342,7 @@ def bill_of_materials() -> list[tuple[str, int, float]]:
         ("Used hoverboard (2 hub motors, mainboard; reflash with hoverboard-firmware-hack-FOC)", 1, 50.0),
         ("ST-Link programmer for the reflash", 1, 10.0),
         ("New 36 V 10S2P battery with BMS (don't reuse the hoverboard's)", 1, BATTERY.price_usd),
-        ("Base: plywood/aluminium chassis, 2 casters, 4 outrigger arms + wheels, foam bumper", 1, 85.0),
+        ("Base: plywood/aluminium chassis, 2 spring-loaded casters, 4 outrigger arms + wheels, foam bumper", 1, 95.0),
         ("Steel ballast plate, 12 kg", 1, 35.0),
         ("Deck tote (plastic bin) + mounts", 1, 10.0),
         ("Lift: 1.6 m 2040 rail, V-wheel carriage, NEMA17, belt, 2:1 pulleys, constant-force spring", 1, LIFT.price_usd),

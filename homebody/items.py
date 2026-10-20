@@ -25,7 +25,7 @@ import numpy as np
 
 from . import home as H
 
-BED, DESK = 0.58, 0.89
+BED, DESK = H.BED_Z, H.DESK_Z
 
 
 @dataclass(frozen=True)
@@ -177,6 +177,16 @@ def items_xml() -> str:
     return "\n    ".join(out)
 
 
+def _footprint(it):
+    """Radius of the circle an item covers lying on the floor."""
+    if it.shape == "cloth":
+        rows, cols = it.grid
+        return 0.5 * math.hypot(rows * 2 * it.size[0], cols * 2 * it.size[1])
+    if it.shape == "corded":
+        return math.hypot(it.size[0], it.size[1]) + 0.1
+    return math.hypot(it.size[0], it.size[1])
+
+
 def _resting_half_height(it):
     if it.shape == "cloth":
         return it.size[2]
@@ -201,6 +211,7 @@ class Items:
         with ``scatter``; ``dropout`` leaves each one out with that probability. Pods go in the bucket."""
         self.active[:] = False
         npod = 0
+        placed = []                                     # floor footprints so far: ((x, y), radius)
         for k, it in enumerate(ITEMS):
             qa, va = self.adr[k]
             qvel[va:va + 6] = 0
@@ -226,13 +237,19 @@ class Items:
             else:
                 x, y = H.A(*it.start)
                 if it.on == 0.0:
-                    r = math.hypot(it.size[0], it.size[1]) * 0.8
-                    for _ in range(30):                 # jitter, but keep clear of walls and furniture
-                        px, py = x + rng.uniform(-jitter, jitter), y + rng.uniform(-jitter, jitter)
-                        if is_free((px, py), r):
+                    r = _footprint(it)
+                    spot, jit = None, jitter
+                    for _ in range(40):                 # jitter, but keep clear of walls, furniture and other items
+                        px, py = x + rng.uniform(-jit, jit), y + rng.uniform(-jit, jit)
+                        if is_free((px, py), r) and all(math.hypot(px - qx, py - qy) > r + rq for (qx, qy), rq in placed):
+                            spot = (px, py)
                             break
-                        jitter = min(jitter * 1.3, 0.4)
-                    x, y = px, py
+                        jit = min(jit * 1.2, 0.5)
+                    if spot is None:                    # no room: leave it out rather than overlap something
+                        qpos[qa:qa + 7] = park
+                        continue
+                    x, y = spot
+                    placed.append((spot, r))
                     z = height_at(x, y) + _resting_half_height(it) + 0.015
                 else:
                     x, y = x + rng.uniform(-0.03, 0.03), y + rng.uniform(-0.03, 0.03)

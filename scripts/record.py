@@ -1,6 +1,6 @@
-"""Record scripted chores (sim-assisted) in the owner's scanned home.
+"""Record scripted chores (sim-assisted) in the owner's recreated home.
 
-    python scripts/record.py --out media/demo.mp4 [--scan]
+    python scripts/record.py --out media/demo.mp4
 """
 import argparse
 import math
@@ -20,11 +20,11 @@ from homebody import items as I  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default="media/demo.mp4")
-ap.add_argument("--scan", action="store_true", help="draw the textured scan")
+
 a = ap.parse_args()
 
 env = HomebodyEnv(EnvConfig(terrain_level=0.0, randomize_physics=False, sensor_noise=False, kinds=(),
-                            scan_visual=a.scan))
+                            ))
 env.reset(seed=1)
 for dd in env.doors.values():
     env.data.qpos[dd["q"]] = 0.0
@@ -58,7 +58,7 @@ def recording_step(action):
 
 
 env.step = recording_step
-view["text"] = "foyer: picking a can off the floor into the deck tote"
+view["text"] = "picking a can off the floor into the deck tote"
 env._pose_robot(np.array(H.A(2.0, -1.6)), 0.0)
 mujoco.mj_forward(env.model, env.data)
 k = I.ITEM_NAMES.index("can_1")
@@ -71,7 +71,7 @@ mujoco.mj_forward(env.model, env.data)
 B.run(env, 1, lambda e: B.command(e))
 B.pick_into_tote(env, env.items.body[k])
 view["text"] = "laundry closet: gripping the knob, pulling the door off its catch"
-view["cam"] = "laundry"                      # fixed camera in the foyer, aimed at the closet
+view["cam"] = "laundry"                      # fixed camera aimed at the laundry closet
 env._pose_robot(np.array(H.A(1.89, -3.44)), math.pi / 2)
 mujoco.mj_forward(env.model, env.data)
 B.pull_knob_door(env)

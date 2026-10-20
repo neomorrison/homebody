@@ -51,7 +51,7 @@ class EnvConfig:
     item_dropout: float = 0.0            # leave each item out with this probability
     start_docked: float = 0.0            # probability of starting on the charger
     start_room: tuple = ("bedroom", "hallway", "living", "kitchen")
-    scan_visual: bool = False            # draw the textured scan (cameras see the real rooms; slower to build)
+    randomize_look: bool = True          # vary colours, lighting and the movable furniture each episode
     push_rate: float = 0.0               # accidental shoves per minute
     push_force: tuple = (20.0, 80.0)     # N, applied near the top of the mast for 0.2 s
     randomize_physics: bool = True
@@ -95,7 +95,7 @@ class HomebodyEnv(gym.Env):
     def __init__(self, config: EnvConfig | None = None, render_mode: str | None = None):
         self.cfg = config or EnvConfig()
         self.render_mode = render_mode
-        self.model = W.build_model(self.cfg.servo_mode, self.cfg.scan_visual)
+        self.model = W.build_model(self.cfg.servo_mode)
         self.data = mujoco.MjData(self.model)
         m = self.model
         self.n_sub = S.PHYSICS_HZ // S.CONTROL_HZ
@@ -134,7 +134,8 @@ class HomebodyEnv(gym.Env):
         containers.update({name: Si(f"in_{name}") for name, _, _ in H.ZONES})
         containers.update({"washer": Si("in_washer"), "dryer": Si("in_dryer"), "tote": Si("tote")})
         self.items = I.Items(m, containers)
-        self.terrain = T.Terrain(m, H.EXTENT, static_height=H.static_height)
+        self.terrain = T.Terrain(m, H.EXTENT)
+        self.look = W.Look(m, H)
         self.terrain_state = None
 
         root_of = m.body_rootid
@@ -233,7 +234,7 @@ class HomebodyEnv(gym.Env):
             self._place_robot()
         self._place_chair_and_doors()
         rects = self._obstacles() + [(*d.qpos[self.rq:self.rq + 2], 0.35, 0.35, 0.0)]
-        free = lambda p, r: H.is_free(p, r, rects)
+        free = lambda p, r: H.is_free(p, r, rects, for_items=True)
         mujoco.mj_kinematics(m, d)
         bucket = d.xpos[self.bins["pod_bucket"]].copy()
         self.items.place(rng, self.cfg.kinds, d.qpos, d.qvel, self.terrain.height_at, free, bucket,
@@ -265,6 +266,7 @@ class HomebodyEnv(gym.Env):
         m, rng, lvl = self.model, self.np_random, self.cfg.terrain_level
         tr = self.terrain
         tr.generate_heights(rng, lvl)
+        self.look.randomize(rng if self.cfg.randomize_look else None)
         fl = lambda c, half, yaw=0.0, pad=0.06: tr.flatten(c[0], c[1], yaw, half[0], half[1], pad)
         for name in ("washer", "dryer"):
             b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
@@ -341,8 +343,9 @@ class HomebodyEnv(gym.Env):
         for dd in self.doors.values():
             spec = dd["spec"]
             d.qpos[dd["q"]] = math.radians(spec.open_deg) * rng.uniform(0.75, 0.98) if rng.uniform() < spec.open_prob else 0.0
-        for n, (q, v) in self.mdoor.items():
-            d.qpos[q] = 0.0 if rng.uniform() < 0.8 else rng.uniform(0.5, 1.8)
+        closet_open = d.qpos[self.doors["laundry_door"]["q"]] > 1.0
+        for n, (q, v) in self.mdoor.items():       # machine doors swing out through the closet doorway
+            d.qpos[q] = rng.uniform(0.5, 1.8) if closet_open and rng.uniform() < 0.3 else 0.0
 
     # ------------------------------------------------------------------- step
     def _enabled(self):

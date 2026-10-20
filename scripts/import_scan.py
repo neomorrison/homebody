@@ -7,11 +7,11 @@ Writes homebody/assets/home_scan.npz:
     x0, y0  map origin in the aligned scan frame (m)
     rot     degrees the scan was turned so the walls run along x and y
     floor   scan height of the floor (subtracted)
-and homebody/assets/home_scan.png, a preview. Clutter is stripped later, at load
-time, by the edits in homebody/home.py, so they can be changed without re-importing.
+and homebody/assets/home_scan.png, a preview. homebody/home.py measures the rooms from
+this map and rebuilds them as simple solids; the floor and rug textures in
+homebody/assets/textures/ were cut from the scan's ortho renders.
 
-Also writes scans/<date>/scan_tex.png (texture as PNG) so the scan can be shown in
-the sim's cameras (EnvConfig(scan_visual=True)).
+Also writes scans/<date>/scan_tex.png (the texture as PNG), for cutting new textures.
 """
 import argparse
 import os

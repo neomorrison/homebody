@@ -1,10 +1,10 @@
-"""MJCF for the owner's home (``home``), the robot (``robot_xml``), the floor (``terrain``) and items.
+"""MJCF for the owner's recreated home (``home``), the robot (``robot_xml``), the floor (``terrain``)
+and items.
 
-The scanned apartment is a heightfield (walls, bed, desk, sofa, counters; see
-``terrain`` and ``home``). On top of it sit the things the robot operates:
-the stacked washer and dryer, the two doors, the containers, the dock, the
-rolling desk chair, the living-room rug and the loose items. With
-``scan_visual`` the textured scan is drawn too, so cameras see the real rooms.
+Walls are boxes generated around the rooms; furniture is one body per piece
+(so movable pieces can shift each episode); the floor and the living-room rug
+use textures cut from the scan. ``Look`` varies colours and lighting per
+episode, so camera-based skills learn the room rather than one exact render.
 
 Every world geom has contact priority 2 and the robot's wheels and body 0, so
 friction and softness of a contact are the surface's (see ``terrain``).
@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import math
 import os
+
+import numpy as np
 
 from . import home as H
 from . import items as I
@@ -30,7 +32,6 @@ def _f(*v):
 
 def look_at(name, pos, target, fovy=60):
     """A fixed camera at ``pos`` aimed at ``target``."""
-    import numpy as np
     p, t = np.array(pos, float), np.array(target, float)
     fwd = (t - p) / np.linalg.norm(t - p)
     right = np.cross(fwd, [0, 0, 1.0])
@@ -166,52 +167,93 @@ def chair_xml() -> str:
   </body>"""
 
 
-def surface_boxes_xml() -> str:
+def walls_xml() -> str:
+    return "\n    ".join(
+        f'<geom name="wall_{k}" type="box" size="{_f(hx, hy, H.WALL_H / 2)}" pos="{_f(cx, cy, H.WALL_H / 2)}" '
+        f'material="m_wall" {SURF} friction="0.5 0.02 0.001"/>'
+        for k, (cx, cy, hx, hy) in enumerate(H.WALLS))
+
+
+def furniture_xml() -> str:
+    """One body per furniture group, so a group can be shifted as a whole."""
+    groups = {}
+    for p in H.FURNITURE:
+        groups.setdefault(p.group or p.name, []).append(p)
     out = []
-    for name, (x0, y0, x1, y1), h in H.SURFACE_BOXES:
-        (a, b), (c, d) = H.A(x0, y0), H.A(x1, y1)
-        out.append(f'<geom name="{name}" type="box" size="{_f((c - a) / 2, (d - b) / 2, h / 2)}" '
-                   f'pos="{_f((a + c) / 2, (b + d) / 2, h / 2)}" material="structure" {SURF} friction="0.7 0.02 0.001"/>')
+    for g, parts in groups.items():
+        geoms = []
+        for p in parts:
+            x0, y0, x1, y1 = H.AR(*p.rect)
+            pos = _f((x0 + x1) / 2, (y0 + y1) / 2, (p.z0 + p.z1) / 2)
+            size = (_f(min(x1 - x0, y1 - y0) / 2, (p.z1 - p.z0) / 2) if p.shape == "cylinder"
+                    else _f((x1 - x0) / 2, (y1 - y0) / 2, (p.z1 - p.z0) / 2))
+            geoms.append(f'<geom name="{p.name}" type="{p.shape}" size="{size}" pos="{pos}" material="m_{p.material}" '
+                         f'{SURF} friction="0.6 0.02 0.001"/>')
+        out.append(f'<body name="furn_{g}">{"".join(geoms)}</body>')
     return "\n    ".join(out)
 
 
 def rug_xml() -> str:
-    """The living-room rug, fixed in place (aligned frame 1.4..2.7 x 1.9..3.5)."""
+    """The living-room rug ("KEEP OFF"), fixed in place, with its texture from the scan."""
     (a, b), (c, d) = H.A(1.40, 1.90), H.A(2.70, 3.50)
     return (f'<body name="rug_living" pos="{_f((a + c) / 2, (b + d) / 2, 0)}"><geom name="rug_living" type="box" '
             f'size="{_f((c - a) / 2, (d - b) / 2, 0.003)}" pos="0 0 0.003" priority="2" condim="4" friction="0.9 0.02 0.001" '
-            f'solref="0.035 1" rgba="0.22 0.30 0.45 1"/></body>')
+            f'solref="0.035 1" material="m_rug"/></body>')
 
 
-def scan_assets_xml() -> str:
-    src = os.path.join(ROOT, H.SCAN_SOURCE)
-    d = os.path.dirname(src).replace("\\", "/")
-    return (f'<mesh name="home_scan" file="{os.path.basename(src)}"/>'
-            f'<texture name="home_scan" type="2d" file="{d}/scan_tex.png"/>'
-            f'<material name="home_scan" texture="home_scan"/>'), d
+def materials_xml() -> str:
+    tex = H.TEXTURES.replace("\\", "/")
+    out = [f'<texture name="t_wood" type="2d" file="{tex}/floor_wood.png"/>',
+           f'<texture name="t_rug" type="2d" file="{tex}/rug.png"/>',
+           '<material name="floor" texture="t_wood" texuniform="true" texrepeat="1 1.43" reflectance="0.04"/>',
+           '<material name="m_rug" texture="t_rug" texrepeat="1 1"/>']
+    out += [f'<material name="m_{n}" rgba="{_f(*c)}"/>' for n, c in H.MATERIALS.items()]
+    return "\n    ".join(out)
 
 
-def scan_body_xml() -> str:
-    return (f'<body name="home_scan" pos="{_f(-H.CX, -H.CY, -H.SCAN_FLOOR)}" euler="0 0 {H.SCAN_ROT:.4f}">'
-            f'<body euler="90 0 0"><geom type="mesh" mesh="home_scan" material="home_scan" contype="0" '
-            f'conaffinity="0" group="1"/></body></body>')
+class Look:
+    """Per-episode appearance randomisation: material colours, light levels, movable furniture positions."""
+
+    def __init__(self, model, home):
+        import mujoco
+        self.m = model
+        self.mats = {n: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_MATERIAL, f"m_{n}") for n in home.MATERIALS}
+        self.base = {n: np.array(c, float) for n, c in home.MATERIALS.items()}
+        self.lights = list(range(model.nlight))
+        self.light_base = model.light_diffuse.copy()
+        self.movable = {}
+        for g, jit in home.MOVABLE.items():
+            b = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"furn_{g}")
+            if b >= 0:
+                self.movable[b] = (model.body_pos[b].copy(), jit)
+
+    def randomize(self, rng):
+        m = self.m
+        if rng is None:
+            for n, mid in self.mats.items():
+                m.mat_rgba[mid] = self.base[n]
+            m.light_diffuse[:] = self.light_base
+            for b, (p0, _) in self.movable.items():
+                m.body_pos[b] = p0
+            return
+        for n, mid in self.mats.items():
+            c = self.base[n].copy()
+            c[:3] = np.clip(c[:3] * rng.uniform(0.8, 1.15) + rng.normal(0, 0.03, 3), 0, 1)
+            m.mat_rgba[mid] = c
+        m.light_diffuse[:] = self.light_base * rng.uniform(0.6, 1.4)
+        for b, (p0, jit) in self.movable.items():
+            m.body_pos[b] = p0 + np.array([*rng.uniform(-jit, jit, 2), 0])
 
 
-def scene_xml(servo_mode: str = S.SERVO_MODE, scan_visual: bool = False) -> str:
-    meshdir, scan_assets, scan_body = "", "", ""
-    if scan_visual:
-        scan_assets, d = scan_assets_xml()
-        meshdir = f'meshdir="{d}"'
-        scan_body = scan_body_xml()
-    floor_alpha = "0" if scan_visual else "1"
+def scene_xml(servo_mode: str = S.SERVO_MODE) -> str:
     A = H.A
     return f"""<mujoco model="homebody">
-  <compiler angle="degree" autolimits="true" {meshdir}/>
+  <compiler angle="degree" autolimits="true"/>
   <option timestep="{1.0 / S.PHYSICS_HZ}" integrator="implicitfast" cone="elliptic"/>
   <size memory="120M"/>
   <visual>
     <global offwidth="1280" offheight="720"/>
-    <headlight ambient="0.4 0.4 0.4" diffuse="0.5 0.5 0.5"/>
+    <headlight ambient="0.35 0.35 0.35" diffuse="0.35 0.35 0.35"/>
     <quality shadowsize="4096"/>
     <map znear="0.001" zfar="80"/>
   </visual>
@@ -219,12 +261,9 @@ def scene_xml(servo_mode: str = S.SERVO_MODE, scan_visual: bool = False) -> str:
   <asset>
     {R.materials_xml()}
     <texture name="sky" type="skybox" builtin="gradient" rgb1="0.96 0.95 0.92" rgb2="0.80 0.80 0.78" width="256" height="256"/>
-    <texture name="grid" type="2d" builtin="checker" rgb1="0.82 0.80 0.76" rgb2="0.76 0.74 0.70" width="512" height="512"/>
-    <material name="floor" texture="grid" texrepeat="100 120" reflectance="0.02" rgba="1 1 1 {floor_alpha}"/>
+    {materials_xml()}
     {T.assets_xml(H.EXTENT)}
-    {scan_assets}
-    <material name="structure" rgba="0.90 0.88 0.84 {floor_alpha}"/>
-    <material name="door" rgba="0.90 0.88 0.82 1"/>
+    <material name="door" rgba="0.93 0.92 0.88 1"/>
     <material name="fabric" rgba="0.70 0.60 0.45 1"/>
     <material name="appliance" rgba="0.96 0.96 0.96 1"/>
     <material name="glass" rgba="0.45 0.55 0.60 0.6"/>
@@ -233,19 +272,22 @@ def scene_xml(servo_mode: str = S.SERVO_MODE, scan_visual: bool = False) -> str:
     <material name="ir" rgba="0.6 0.0 0.1 1" emission="0.5"/>
   </asset>
   <worldbody>
-    <light pos="{_f(*A(-3.9, 2.5), 2.3)}" dir="0 0 -1" diffuse="0.3 0.3 0.3" castshadow="false"/>
-    <light pos="{_f(*A(2.2, 2.5), 2.3)}" dir="0 0 -1" diffuse="0.3 0.3 0.3" castshadow="false"/>
-    <light pos="{_f(*A(2.0, -2.0), 2.3)}" dir="0 0 -1" diffuse="0.3 0.3 0.3" castshadow="false"/>
+    <light pos="{_f(*A(-3.9, 2.5), 2.35)}" dir="0 0 -1" diffuse="0.45 0.43 0.40" castshadow="true" attenuation="0.5 0.2 0"/>
+    <light pos="{_f(*A(2.2, 2.6), 2.35)}" dir="0 0 -1" diffuse="0.50 0.50 0.48" castshadow="true" attenuation="0.5 0.2 0"/>
+    <light pos="{_f(*A(2.2, -0.9), 2.35)}" dir="0 0 -1" diffuse="0.45 0.45 0.45" castshadow="false" attenuation="0.5 0.2 0"/>
+    <light pos="{_f(*A(1.9, -3.6), 2.35)}" dir="0 0 -1" diffuse="0.40 0.40 0.40" castshadow="false" attenuation="0.5 0.2 0"/>
+    <light pos="{_f(*A(-1.0, 0.5), 2.35)}" dir="0 0 -1" diffuse="0.30 0.30 0.30" castshadow="false" attenuation="0.5 0.2 0"/>
     <camera name="overview" pos="0 -7.5 14" xyaxes="1 0 0 0 0.88 0.47"/>
     {look_at("bedroom", (*A(-2.75, 0.25), 2.0), (*A(-4.2, 2.6), 0.3), 80)}
     {look_at("closet", (*A(-3.0, 1.6), 1.9), (*A(-4.6, 0.5), 0.3), 75)}
     {look_at("laundry", (*A(1.4, -2.6), 1.9), (*A(2.9, -3.9), 0.8), 75)}
     {look_at("kitchen", (*A(0.9, 0.9), 1.9), (*A(1.6, -0.6), 0.4), 75)}
+    {look_at("living", (*A(0.9, 1.3), 1.9), (*A(3.2, 3.6), 0.3), 80)}
     {look_at("hallway", (*A(0.4, 0.5), 1.7), (*A(-3.0, 0.5), 0.5), 70)}
     {T.world_xml()}
     {rug_xml()}
-    {surface_boxes_xml()}
-    {scan_body}
+    {walls_xml()}
+    {furniture_xml()}
     {zones_xml()}
     {bins_xml()}
     {machine_xml(H.WASHER)}
@@ -269,6 +311,6 @@ def scene_xml(servo_mode: str = S.SERVO_MODE, scan_visual: bool = False) -> str:
 </mujoco>"""
 
 
-def build_model(servo_mode: str = S.SERVO_MODE, scan_visual: bool = False):
+def build_model(servo_mode: str = S.SERVO_MODE):
     import mujoco
-    return mujoco.MjModel.from_xml_string(scene_xml(servo_mode, scan_visual))
+    return mujoco.MjModel.from_xml_string(scene_xml(servo_mode))
